@@ -24,7 +24,7 @@
             <svg class="h-3.5 w-3.5 text-amber-500 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
-            <span>{{ cacheLabel() }}</span>
+            <span>{{ cacheLabel() }}:</span>
             <strong class="text-amber-700 dark:text-amber-400">{{ formatTokens(stats?.total_cache_tokens || 0) }}</strong>
             <span
               class="pointer-events-none absolute left-1/2 top-full z-30 mt-2 w-56 -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-3 text-left text-xs text-gray-700 opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus:opacity-100 dark:border-dark-600 dark:bg-dark-800 dark:text-dark-200"
