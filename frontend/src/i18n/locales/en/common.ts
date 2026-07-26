@@ -155,6 +155,8 @@ export default {
     apiKeys: 'API Keys',
     batchImage: 'Batch Images',
     usage: 'Usage',
+    modelPlaza: 'Models',
+    modelPlazaManagement: 'Model Plaza',
     redeem: 'Redeem',
     affiliate: 'Affiliate Rebates',
     affiliateManagement: 'Affiliate Rebates',

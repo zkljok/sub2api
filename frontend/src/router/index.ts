@@ -175,6 +175,17 @@ const routes: RouteRecordRaw[] = [
       title: 'Legal Document'
     }
   },
+  {
+    path: '/models',
+    name: 'ModelPlaza',
+    alias: '/pricing',
+    component: () => import('@/views/public/ModelPlazaView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'Models',
+      titleKey: 'nav.modelPlaza'
+    }
+  },
 
   // ==================== User Routes ====================
   {
@@ -613,6 +624,17 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/model-plaza',
+    name: 'AdminModelPlaza',
+    component: () => import('@/views/admin/ModelPlazaView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Model Plaza',
+      titleKey: 'nav.modelPlazaManagement'
+    }
+  },
+  {
     path: '/admin/affiliates',
     redirect: '/admin/affiliates/invites'
   },
@@ -728,7 +750,7 @@ let authInitialized = false
 const navigationLoading = useNavigationLoadingState()
 // 延迟初始化预加载，传入 router 实例
 let routePrefetch: ReturnType<typeof useRoutePrefetch> | null = null
-const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/setup', '/payment/result', '/payment/airwallex', '/legal']
+const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/models', '/pricing', '/setup', '/payment/result', '/payment/airwallex', '/legal']
 const BACKEND_MODE_CALLBACK_PATHS = [
   '/auth/callback',
   '/auth/linuxdo/callback',

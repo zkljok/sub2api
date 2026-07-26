@@ -102,6 +102,9 @@ func RegisterAdminRoutes(
 		// 渠道管理
 		registerChannelRoutes(admin, h)
 
+		// 模型广场管理
+		registerModelPlazaRoutes(admin, h)
+
 		// 渠道监控
 		registerChannelMonitorRoutes(admin, h)
 
@@ -116,6 +119,21 @@ func RegisterAdminRoutes(
 
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
+	}
+}
+
+func registerModelPlazaRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	plaza := admin.Group("/model-plaza")
+	{
+		plaza.GET("/vendors", h.Admin.ModelPlaza.ListVendors)
+		plaza.POST("/vendors", h.Admin.ModelPlaza.CreateVendor)
+		plaza.PUT("/vendors/:id", h.Admin.ModelPlaza.UpdateVendor)
+		plaza.DELETE("/vendors/:id", h.Admin.ModelPlaza.DeleteVendor)
+		plaza.GET("/models", h.Admin.ModelPlaza.ListModels)
+		plaza.POST("/models", h.Admin.ModelPlaza.CreateModel)
+		plaza.PUT("/models/:id", h.Admin.ModelPlaza.UpdateModel)
+		plaza.DELETE("/models/:id", h.Admin.ModelPlaza.DeleteModel)
+		plaza.POST("/sync", h.Admin.ModelPlaza.Sync)
 	}
 }
 
