@@ -794,9 +794,9 @@ func (s *GatewayService) calculateRecordUsageCost(
 	imageMultiplier float64,
 	opts *recordUsageOpts,
 ) *CostBreakdown {
-	// 图片生成：渠道定价为 token 计费时走 token 路径，否则走图片计费
+	// 图片生成：已配置定价为 token 计费时走 token 路径，否则走图片计费
 	if result.ImageCount > 0 {
-		if resolved := s.resolveChannelPricing(ctx, billingModel, apiKey); resolved != nil && resolved.Mode == BillingModeToken {
+		if resolved := s.resolveConfiguredBillingPricing(ctx, billingModel, apiKey); resolved != nil && resolved.Mode == BillingModeToken {
 			return s.calculateTokenCost(ctx, result, apiKey, billingModel, multiplier, opts)
 		}
 		return s.calculateImageCost(ctx, result, apiKey, billingModel, imageMultiplier)
@@ -807,22 +807,22 @@ func (s *GatewayService) calculateRecordUsageCost(
 }
 
 // compositeBillableModel 决定 composite 分组请求的计费模型：来源覆盖把计费模型
-// 换成公开别名等非具体模型时，只有管理员为该名字显式配置了渠道定价才按其计费
-// （OpenRouter 式自定价），否则回退到实际转发的具体模型，避免别名落入价格表的
-// 家族模糊匹配（错价）或查无价（$0）。未发生来源覆盖时原样返回。
+// 换成公开别名等非具体模型时，只有管理员为该名字显式配置了计费价（渠道价或
+// 模型广场价）才按其计费，否则回退到实际转发的具体模型，避免别名落入价格表
+// 的家族模糊匹配（错价）或查无价（$0）。未发生来源覆盖时原样返回。
 func (s *GatewayService) compositeBillableModel(ctx context.Context, apiKey *APIKey, billingModel, concreteBillingModel string) string {
 	if concreteBillingModel == "" || billingModel == concreteBillingModel {
 		return billingModel
 	}
-	if s.resolveChannelPricing(ctx, billingModel, apiKey) != nil {
+	if s.resolveConfiguredBillingPricing(ctx, billingModel, apiKey) != nil {
 		return billingModel
 	}
-	logger.LegacyPrintf("service.gateway", "[Billing] composite billing model %q has no explicit channel pricing, billing by concrete model %q", billingModel, concreteBillingModel)
+	logger.LegacyPrintf("service.gateway", "[Billing] composite billing model %q has no explicit configured pricing, billing by concrete model %q", billingModel, concreteBillingModel)
 	return concreteBillingModel
 }
 
 // billableModelWithFallback 在选定计费模型（可能是 composite 公开别名或未定价的映射名）
-// 查不到任何价格（渠道价与全局价均无）时，按序回退到实际转发的具体模型，避免静默 $0 计费。
+// 查不到任何价格（已配置计费价与全局价均无）时，按序回退到实际转发的具体模型，避免静默 $0 计费。
 // 所有候选都无价时保持原值，走既有的 warn + 零成本路径。
 func (s *GatewayService) billableModelWithFallback(ctx context.Context, apiKey *APIKey, billingModel string, fallbacks ...string) string {
 	if s.hasResolvableTokenPricing(ctx, billingModel, apiKey) {
@@ -841,12 +841,12 @@ func (s *GatewayService) billableModelWithFallback(ctx context.Context, apiKey *
 	return billingModel
 }
 
-// hasResolvableTokenPricing 判断模型是否能在渠道定价或全局价格表中解析出 token 价格。
+// hasResolvableTokenPricing 判断模型是否能在已配置计费价或全局价格表中解析出 token 价格。
 func (s *GatewayService) hasResolvableTokenPricing(ctx context.Context, model string, apiKey *APIKey) bool {
 	if strings.TrimSpace(model) == "" {
 		return false
 	}
-	if s.resolveChannelPricing(ctx, model, apiKey) != nil {
+	if s.resolveConfiguredBillingPricing(ctx, model, apiKey) != nil {
 		return true
 	}
 	if s.billingService == nil {
@@ -870,7 +870,37 @@ func (s *GatewayService) resolveChannelPricing(ctx context.Context, billingModel
 	return nil
 }
 
-// calculateImageCost 计算图片生成费用：渠道级别定价优先，否则走按次计费。
+// resolveConfiguredBillingPricing 检查指定模型是否存在后台显式计费价。
+// 目前包括渠道管理中的分组定价，以及开启“模型广场价格参与真实计费”后的模型广场价。
+func (s *GatewayService) resolveConfiguredBillingPricing(ctx context.Context, billingModel string, apiKey *APIKey) *ResolvedPricing {
+	if s.resolver == nil {
+		return nil
+	}
+	var groupID *int64
+	if apiKey != nil && apiKey.Group != nil {
+		gid := apiKey.Group.ID
+		groupID = &gid
+	}
+	resolved := s.resolver.Resolve(ctx, PricingInput{Model: billingModel, GroupID: groupID})
+	if isConfiguredBillingPricingSource(resolved) {
+		return resolved
+	}
+	return nil
+}
+
+func isConfiguredBillingPricingSource(resolved *ResolvedPricing) bool {
+	if resolved == nil {
+		return false
+	}
+	switch resolved.Source {
+	case PricingSourceChannel, PricingSourceModelPlazaOverride, PricingSourceModelPlazaOfficial:
+		return true
+	default:
+		return false
+	}
+}
+
+// calculateImageCost 计算图片生成费用：后台显式计费价优先，否则走按次计费。
 func (s *GatewayService) calculateImageCost(
 	ctx context.Context,
 	result *ForwardResult,
@@ -883,17 +913,21 @@ func (s *GatewayService) calculateImageCost(
 	if apiKeyHasConfiguredImagePrice(apiKey, sizeTier) {
 		return s.billingService.CalculateImageCost(billingModel, sizeTier, result.ImageCount, groupConfig, multiplier)
 	}
-	if resolved := s.resolveChannelPricing(ctx, billingModel, apiKey); resolved != nil {
+	if resolved := s.resolveConfiguredBillingPricing(ctx, billingModel, apiKey); resolved != nil {
 		tokens := UsageTokens{
 			InputTokens:       result.Usage.InputTokens,
 			OutputTokens:      result.Usage.OutputTokens,
 			ImageOutputTokens: result.Usage.ImageOutputTokens,
 		}
-		gid := apiKey.Group.ID
+		var groupID *int64
+		if apiKey != nil && apiKey.Group != nil {
+			gid := apiKey.Group.ID
+			groupID = &gid
+		}
 		cost, err := s.billingService.CalculateCostUnified(CostInput{
 			Ctx:            ctx,
 			Model:          billingModel,
-			GroupID:        &gid,
+			GroupID:        groupID,
 			Tokens:         tokens,
 			RequestCount:   result.ImageCount,
 			SizeTier:       sizeTier,
@@ -911,7 +945,7 @@ func (s *GatewayService) calculateImageCost(
 	return s.billingService.CalculateImageCost(billingModel, sizeTier, result.ImageCount, groupConfig, multiplier)
 }
 
-// calculateTokenCost 计算 Token 计费：根据 opts 决定走普通/长上下文/渠道统一计费。
+// calculateTokenCost 计算 Token 计费：根据 opts 决定走普通/长上下文/后台显式价格统一计费。
 func (s *GatewayService) calculateTokenCost(
 	ctx context.Context,
 	result *ForwardResult,
@@ -933,13 +967,17 @@ func (s *GatewayService) calculateTokenCost(
 	var cost *CostBreakdown
 	var err error
 
-	// 优先尝试渠道定价 → CalculateCostUnified
-	if resolved := s.resolveChannelPricing(ctx, billingModel, apiKey); resolved != nil {
-		gid := apiKey.Group.ID
+	// 优先尝试后台显式计费价 → CalculateCostUnified
+	if resolved := s.resolveConfiguredBillingPricing(ctx, billingModel, apiKey); resolved != nil {
+		var groupID *int64
+		if apiKey != nil && apiKey.Group != nil {
+			gid := apiKey.Group.ID
+			groupID = &gid
+		}
 		cost, err = s.billingService.CalculateCostUnified(CostInput{
 			Ctx:            ctx,
 			Model:          billingModel,
-			GroupID:        &gid,
+			GroupID:        groupID,
 			Tokens:         tokens,
 			RequestCount:   1,
 			RateMultiplier: multiplier,

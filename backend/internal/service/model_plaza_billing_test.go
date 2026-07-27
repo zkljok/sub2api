@@ -146,6 +146,52 @@ func TestModelPricingResolverSkipsModelPlazaWhenDisabled(t *testing.T) {
 	}
 }
 
+func TestGatewayTokenCostUsesModelPlazaPricingWithGroupMultiplier(t *testing.T) {
+	input, output := 2.0, 4.0
+	plaza := NewModelPlazaService(
+		&modelPlazaBillingRepoStub{models: []ModelPlazaModel{
+			{
+				ModelName: "custom-model",
+				Status:    ModelPlazaStatusActive,
+				NameRule:  ModelPlazaNameRuleExact,
+				PricingOverride: ModelPlazaPricingOverride{
+					BillingMode: BillingModeToken,
+					InputPrice:  &input,
+					OutputPrice: &output,
+				},
+			},
+		}},
+		nil,
+		nil,
+		&modelPlazaBillingSettingRepoStub{values: map[string]string{SettingKeyModelPlazaBillingSettings: `{"enabled":true}`}},
+	)
+	billing := NewBillingService(&config.Config{}, nil)
+	resolver := NewModelPricingResolver(nil, billing)
+	resolver.modelPlazaService = plaza
+	svc := &GatewayService{billingService: billing, resolver: resolver}
+
+	resolved := resolver.Resolve(context.Background(), PricingInput{Model: "custom-model"})
+	if got, want := resolved.Source, PricingSourceModelPlazaOverride; got != want {
+		t.Fatalf("pricing source = %q, want %q", got, want)
+	}
+
+	cost := svc.calculateTokenCost(
+		context.Background(),
+		&ForwardResult{Usage: ClaudeUsage{InputTokens: 1_000_000, OutputTokens: 500_000}},
+		&APIKey{Group: &Group{ID: 7}},
+		"custom-model",
+		1.5,
+		&recordUsageOpts{},
+	)
+
+	if got, want := cost.TotalCost, 4.0; got != want {
+		t.Fatalf("total cost = %.6f, want %.6f", got, want)
+	}
+	if got, want := cost.ActualCost, 6.0; got != want {
+		t.Fatalf("actual cost = %.6f, want %.6f", got, want)
+	}
+}
+
 func TestModelPlazaAdminBillingStatus(t *testing.T) {
 	input := 2.5
 	svc := NewModelPlazaService(

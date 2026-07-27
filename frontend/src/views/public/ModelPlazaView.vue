@@ -117,7 +117,6 @@
               </p>
 
               <div class="mt-auto flex flex-wrap items-center gap-x-5 gap-y-2 pt-8 text-sm text-zinc-500">
-                <span class="font-semibold text-zinc-600">{{ primaryGroup(model) }}</span>
                 <span>{{ endpointLabel(model) }}</span>
                 <span v-if="primaryTag(model)">{{ primaryTag(model) }}</span>
                 <span>{{ pricingSourceLabel(model.pricing_source) }}</span>
@@ -313,10 +312,6 @@ function price(value: number | null | undefined): string {
 function requestPrice(value: number | null | undefined): string {
   if (value == null) return '-'
   return `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 6 })}/次`
-}
-
-function primaryGroup(model: ModelPlazaModelView): string {
-  return model.groups[0]?.name ? `${model.groups[0].name} 分组` : '默认分组'
 }
 
 function primaryTag(model: ModelPlazaModelView): string {

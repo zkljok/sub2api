@@ -14,13 +14,13 @@ import (
 // composite 分组的公开别名经 BillingModelSource 来源覆盖成为计费模型后有两类错计：
 // 任意别名（如 team/best）查无价静默落 $0；含家族词的别名（如 all/claude）被价格表
 // 家族模糊匹配错计（Opus 流量按 Sonnet 兜底价）。compositeBillableModel 要求别名必须
-// 有显式渠道定价才可参与计费，否则回退实际转发的具体模型。
+// 有显式配置计费价才可参与计费，否则回退实际转发的具体模型。
 func TestCompositeBillableModel(t *testing.T) {
 	svc := &GatewayService{billingService: NewBillingService(&config.Config{}, nil)}
 	apiKey := &APIKey{}
 	ctx := context.Background()
 
-	// 别名无渠道定价（含家族词也一样）→ 回退具体模型
+	// 别名无显式配置计费价（含家族词也一样）→ 回退具体模型
 	require.Equal(t, "claude-opus-4-7",
 		svc.compositeBillableModel(ctx, apiKey, "all/claude", "claude-opus-4-7"))
 	require.Equal(t, "claude-sonnet-4",
@@ -74,4 +74,18 @@ func TestHasResolvableTokenPricing(t *testing.T) {
 	// billingService 缺失时 fail-closed（不误判有价）
 	empty := &GatewayService{}
 	require.False(t, empty.hasResolvableTokenPricing(ctx, "claude-sonnet-4", apiKey))
+}
+
+func TestIsConfiguredBillingPricingSource(t *testing.T) {
+	for _, source := range []string{
+		PricingSourceChannel,
+		PricingSourceModelPlazaOverride,
+		PricingSourceModelPlazaOfficial,
+	} {
+		require.True(t, isConfiguredBillingPricingSource(&ResolvedPricing{Source: source}), source)
+	}
+
+	require.False(t, isConfiguredBillingPricingSource(nil))
+	require.False(t, isConfiguredBillingPricingSource(&ResolvedPricing{Source: PricingSourceLiteLLM}))
+	require.False(t, isConfiguredBillingPricingSource(&ResolvedPricing{Source: PricingSourceFallback}))
 }
