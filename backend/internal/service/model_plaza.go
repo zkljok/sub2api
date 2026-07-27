@@ -45,6 +45,14 @@ type ModelPlazaVendor struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+type ModelPlazaVendorPreset struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Icon        string   `json:"icon"`
+	SortOrder   int      `json:"sort_order"`
+	Patterns    []string `json:"patterns"`
+}
+
 type ModelPlazaPricingOverride struct {
 	BillingMode      BillingMode                     `json:"billing_mode"`
 	InputPrice       *float64                        `json:"input_price"`
@@ -217,6 +225,80 @@ func (s *ModelPlazaService) DeleteVendor(ctx context.Context, id int64) error {
 	return s.repo.DeleteVendor(ctx, id)
 }
 
+func (s *ModelPlazaService) VendorPresets(ctx context.Context) ([]ModelPlazaVendorPreset, error) {
+	return modelPlazaVendorPresets(), nil
+}
+
+func (s *ModelPlazaService) EnsureVendorPresets(ctx context.Context) (int, error) {
+	existing, err := s.repo.ListVendors(ctx, true)
+	if err != nil {
+		return 0, err
+	}
+	seen := make(map[string]struct{}, len(existing))
+	for _, vendor := range existing {
+		seen[strings.ToLower(strings.TrimSpace(vendor.Name))] = struct{}{}
+	}
+	created := 0
+	for _, preset := range modelPlazaVendorPresets() {
+		key := strings.ToLower(strings.TrimSpace(preset.Name))
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		vendor := &ModelPlazaVendor{
+			Name:        preset.Name,
+			Description: preset.Description,
+			Icon:        preset.Icon,
+			Status:      ModelPlazaStatusActive,
+			SortOrder:   preset.SortOrder,
+		}
+		if err := s.repo.CreateVendor(ctx, vendor); err != nil {
+			return created, err
+		}
+		seen[key] = struct{}{}
+		created++
+	}
+	return created, nil
+}
+
+func (s *ModelPlazaService) AutoAssignMissingVendors(ctx context.Context) (int, error) {
+	vendors, err := s.repo.ListVendors(ctx, true)
+	if err != nil {
+		return 0, err
+	}
+	vendorByName := make(map[string]int64, len(vendors))
+	for _, vendor := range vendors {
+		vendorByName[strings.ToLower(strings.TrimSpace(vendor.Name))] = vendor.ID
+	}
+	models, err := s.repo.ListModels(ctx, true)
+	if err != nil {
+		return 0, err
+	}
+	changed := 0
+	for i := range models {
+		model := &models[i]
+		if model.VendorID != nil {
+			continue
+		}
+		preset, ok := detectModelPlazaVendor(model.ModelName)
+		if !ok {
+			continue
+		}
+		vendorID, ok := vendorByName[strings.ToLower(preset.Name)]
+		if !ok {
+			continue
+		}
+		model.VendorID = &vendorID
+		if err := s.UpdateModel(ctx, model); err != nil {
+			return changed, err
+		}
+		changed++
+	}
+	return changed, nil
+}
+
 func (s *ModelPlazaService) ListModels(ctx context.Context, includeDisabled bool) ([]ModelPlazaModel, error) {
 	return s.repo.ListModels(ctx, includeDisabled)
 }
@@ -324,39 +406,48 @@ func (s *ModelPlazaService) BatchUpdateModels(ctx context.Context, req ModelPlaz
 }
 
 func (s *ModelPlazaService) SyncFromChannels(ctx context.Context) (int, error) {
+	if _, err := s.EnsureVendorPresets(ctx); err != nil {
+		return 0, err
+	}
 	accountModels, err := s.modelNamesFromAccounts(ctx)
 	if err != nil {
 		return 0, err
 	}
+	inserted := 0
 	if len(accountModels) > 0 {
-		return s.repo.InsertMissingModels(ctx, accountModels)
+		inserted, err = s.repo.InsertMissingModels(ctx, accountModels)
+	} else {
+		channels, err := s.channelService.ListAvailable(ctx)
+		if err != nil {
+			return 0, err
+		}
+		seen := make(map[string]struct{})
+		models := make([]string, 0)
+		for _, channel := range channels {
+			if channel.Status != StatusActive {
+				continue
+			}
+			for _, model := range channel.SupportedModels {
+				name := strings.TrimSpace(model.Name)
+				if name == "" {
+					continue
+				}
+				key := strings.ToLower(name)
+				if _, ok := seen[key]; ok {
+					continue
+				}
+				seen[key] = struct{}{}
+				models = append(models, name)
+			}
+		}
+		sort.Strings(models)
+		inserted, err = s.repo.InsertMissingModels(ctx, models)
 	}
-
-	channels, err := s.channelService.ListAvailable(ctx)
 	if err != nil {
-		return 0, err
+		return inserted, err
 	}
-	seen := make(map[string]struct{})
-	models := make([]string, 0)
-	for _, channel := range channels {
-		if channel.Status != StatusActive {
-			continue
-		}
-		for _, model := range channel.SupportedModels {
-			name := strings.TrimSpace(model.Name)
-			if name == "" {
-				continue
-			}
-			key := strings.ToLower(name)
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			models = append(models, name)
-		}
-	}
-	sort.Strings(models)
-	return s.repo.InsertMissingModels(ctx, models)
+	_, err = s.AutoAssignMissingVendors(ctx)
+	return inserted, err
 }
 
 // Snapshot returns public pricing data. Only non-exclusive groups are included:
@@ -798,4 +889,38 @@ func modelPlazaVersion(models []ModelPlazaModelView, vendors []ModelPlazaVendor)
 	raw := fmt.Sprintf("%v|%v", models, vendors)
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
+}
+
+func modelPlazaVendorPresets() []ModelPlazaVendorPreset {
+	return []ModelPlazaVendorPreset{
+		{Name: "OpenAI", Description: "OpenAI GPT、o 系列和 Codex 系列模型", Icon: "openai", SortOrder: 10, Patterns: []string{"gpt-", "o1", "o3", "o4", "chatgpt-", "codex-"}},
+		{Name: "DeepSeek", Description: "DeepSeek Chat、Reasoner 和相关模型", Icon: "deepseek", SortOrder: 20, Patterns: []string{"deepseek"}},
+		{Name: "Anthropic", Description: "Anthropic Claude 系列模型", Icon: "anthropic", SortOrder: 30, Patterns: []string{"claude"}},
+		{Name: "Google", Description: "Google Gemini 和 Gemma 系列模型", Icon: "google", SortOrder: 40, Patterns: []string{"gemini", "gemma"}},
+		{Name: "xAI", Description: "xAI Grok 系列模型", Icon: "xai", SortOrder: 50, Patterns: []string{"grok"}},
+		{Name: "阿里巴巴", Description: "阿里通义千问 Qwen 系列模型", Icon: "alibaba", SortOrder: 60, Patterns: []string{"qwen", "qwq", "qvq", "tongyi"}},
+		{Name: "智谱", Description: "智谱 GLM 系列模型", Icon: "zhipu", SortOrder: 70, Patterns: []string{"glm", "charglm", "cogview", "cogvideo"}},
+		{Name: "Moonshot", Description: "Moonshot / Kimi 系列模型", Icon: "moonshot", SortOrder: 80, Patterns: []string{"moonshot", "kimi"}},
+		{Name: "字节豆包", Description: "火山方舟 Doubao 系列模型", Icon: "doubao", SortOrder: 90, Patterns: []string{"doubao", "seed-", "volcengine"}},
+		{Name: "Meta", Description: "Meta Llama 系列模型", Icon: "meta", SortOrder: 100, Patterns: []string{"llama"}},
+		{Name: "Mistral", Description: "Mistral、Mixtral 和 Codestral 系列模型", Icon: "mistral", SortOrder: 110, Patterns: []string{"mistral", "mixtral", "codestral"}},
+		{Name: "Cohere", Description: "Cohere Command 系列模型", Icon: "cohere", SortOrder: 120, Patterns: []string{"command-r", "cohere"}},
+	}
+}
+
+func detectModelPlazaVendor(modelName string) (ModelPlazaVendorPreset, bool) {
+	name := strings.ToLower(strings.TrimSpace(modelName))
+	name = strings.TrimPrefix(name, "openai/")
+	name = strings.TrimPrefix(name, "anthropic/")
+	name = strings.TrimPrefix(name, "google/")
+	name = strings.TrimPrefix(name, "xai/")
+	name = strings.TrimPrefix(name, "deepseek/")
+	for _, preset := range modelPlazaVendorPresets() {
+		for _, pattern := range preset.Patterns {
+			if strings.Contains(name, strings.ToLower(pattern)) {
+				return preset, true
+			}
+		}
+	}
+	return ModelPlazaVendorPreset{}, false
 }

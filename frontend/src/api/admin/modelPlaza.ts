@@ -11,6 +11,14 @@ export interface ModelPlazaVendorRequest {
   sort_order?: number
 }
 
+export interface ModelPlazaVendorPreset {
+  name: string
+  description: string
+  icon: string
+  sort_order: number
+  patterns: string[]
+}
+
 export interface ModelPlazaModelRequest {
   model_name: string
   display_name?: string
@@ -54,6 +62,21 @@ export interface ModelPlazaBillingSettings {
 
 export async function listVendors(): Promise<ModelPlazaVendor[]> {
   const { data } = await apiClient.get<ModelPlazaVendor[]>('/admin/model-plaza/vendors')
+  return data
+}
+
+export async function listVendorPresets(): Promise<ModelPlazaVendorPreset[]> {
+  const { data } = await apiClient.get<ModelPlazaVendorPreset[]>('/admin/model-plaza/vendor-presets')
+  return data
+}
+
+export async function ensureVendorPresets(): Promise<{ created: number }> {
+  const { data } = await apiClient.post<{ created: number }>('/admin/model-plaza/vendor-presets/ensure')
+  return data
+}
+
+export async function autoAssignVendors(): Promise<{ updated: number }> {
+  const { data } = await apiClient.post<{ updated: number }>('/admin/model-plaza/vendors/auto-assign')
   return data
 }
 
@@ -112,6 +135,9 @@ export async function syncFromChannels(): Promise<{ inserted: number }> {
 
 export default {
   listVendors,
+  listVendorPresets,
+  ensureVendorPresets,
+  autoAssignVendors,
   createVendor,
   updateVendor,
   removeVendor,

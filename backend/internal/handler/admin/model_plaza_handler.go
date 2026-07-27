@@ -61,6 +61,33 @@ func (h *ModelPlazaHandler) ListVendors(c *gin.Context) {
 	response.Success(c, items)
 }
 
+func (h *ModelPlazaHandler) ListVendorPresets(c *gin.Context) {
+	items, err := h.service.VendorPresets(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, items)
+}
+
+func (h *ModelPlazaHandler) EnsureVendorPresets(c *gin.Context) {
+	created, err := h.service.EnsureVendorPresets(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"created": created})
+}
+
+func (h *ModelPlazaHandler) AutoAssignVendors(c *gin.Context) {
+	updated, err := h.service.AutoAssignMissingVendors(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"updated": updated})
+}
+
 func (h *ModelPlazaHandler) CreateVendor(c *gin.Context) {
 	var req modelPlazaVendorRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

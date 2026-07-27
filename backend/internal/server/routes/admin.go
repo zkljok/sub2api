@@ -126,6 +126,9 @@ func registerModelPlazaRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	plaza := admin.Group("/model-plaza")
 	{
 		plaza.GET("/vendors", h.Admin.ModelPlaza.ListVendors)
+		plaza.GET("/vendor-presets", h.Admin.ModelPlaza.ListVendorPresets)
+		plaza.POST("/vendor-presets/ensure", h.Admin.ModelPlaza.EnsureVendorPresets)
+		plaza.POST("/vendors/auto-assign", h.Admin.ModelPlaza.AutoAssignVendors)
 		plaza.POST("/vendors", h.Admin.ModelPlaza.CreateVendor)
 		plaza.PUT("/vendors/:id", h.Admin.ModelPlaza.UpdateVendor)
 		plaza.DELETE("/vendors/:id", h.Admin.ModelPlaza.DeleteVendor)

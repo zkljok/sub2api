@@ -35,7 +35,7 @@
           <div class="mb-6 flex items-start justify-between gap-3">
             <div>
               <h2 class="text-lg font-bold">筛选</h2>
-              <p class="mt-1 text-sm text-zinc-500">按供应商、分组、类型和标签细化模型。</p>
+              <p class="mt-1 text-sm text-zinc-500">按模型供应商细化模型。</p>
             </div>
             <button type="button" class="reset-button" :disabled="!hasActiveFilter" @click="resetFilters">
               <Icon name="refresh" size="sm" />
@@ -43,10 +43,7 @@
             </button>
           </div>
 
-          <FilterSection title="分组" :items="groupOptions" :active="groupFilter" @select="groupFilter = $event" />
           <FilterSection title="所有供应商" :items="vendorChipOptions" :active="vendorFilter" @select="vendorFilter = $event" />
-          <FilterSection title="模型标签" :items="tagOptions" :active="tagFilter" @select="tagFilter = $event" />
-          <FilterSection title="端点类型" :items="endpointOptions" :active="endpointFilter" @select="endpointFilter = $event" />
         </aside>
 
         <section class="min-w-0">
@@ -78,7 +75,9 @@
           <div v-else class="grid gap-5 xl:grid-cols-2 2xl:grid-cols-3">
             <article v-for="model in sortedModels" :key="model.model_name" class="model-card">
               <div class="flex items-start gap-4">
-                <div class="vendor-mark">{{ vendorInitial(model) }}</div>
+                <div class="vendor-mark" :style="vendorStyle(vendorName(model.vendor_id) || model.platform || model.model_name)">
+                  {{ vendorIcon(vendorName(model.vendor_id) || model.platform || model.model_name) }}
+                </div>
                 <div class="min-w-0 flex-1">
                   <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0">
@@ -167,7 +166,7 @@ const FilterSection = defineComponent({
               class: ['filter-chip', props.active === '' ? 'active' : ''],
               onClick: () => emit('select', ''),
             },
-            [h('span', props.title.includes('供应商') ? '所有供应商' : props.title === '分组' ? '所有分组' : '所有标签'), h('b', totalCount(props.items))],
+            [h('i', { class: 'vendor-chip-icon all' }, '•'), h('span', '所有供应商'), h('b', totalCount(props.items))],
           ),
           ...props.items.slice(0, 14).map((item) =>
             h(
@@ -175,9 +174,10 @@ const FilterSection = defineComponent({
               {
                 type: 'button',
                 class: ['filter-chip', props.active === item.value ? 'active' : ''],
+                style: vendorStyle(item.label),
                 onClick: () => emit('select', item.value),
               },
-              [h('span', item.label), h('b', String(item.count))],
+              [h('i', { class: 'vendor-chip-icon' }, vendorIcon(item.label)), h('span', item.label), h('b', String(item.count))],
             ),
           ),
         ]),
@@ -192,9 +192,6 @@ const models = ref<ModelPlazaModelView[]>([])
 const vendors = ref<ModelPlazaVendor[]>([])
 const query = ref('')
 const vendorFilter = ref('')
-const endpointFilter = ref('')
-const groupFilter = ref('')
-const tagFilter = ref('')
 const loading = ref(false)
 const sortAsc = ref(true)
 const priceMode = ref<'standard' | 'recharge'>('standard')
@@ -208,9 +205,6 @@ const filteredModels = computed(() => {
   const q = query.value.trim().toLowerCase()
   return models.value.filter((model) => {
     if (vendorFilter.value && String(model.vendor_id || '') !== vendorFilter.value) return false
-    if (endpointFilter.value && !model.supported_endpoints.includes(endpointFilter.value)) return false
-    if (groupFilter.value && !model.groups.some((group) => group.name === groupFilter.value)) return false
-    if (tagFilter.value && !model.tags.includes(tagFilter.value)) return false
     if (!q) return true
     const haystack = [
       model.model_name,
@@ -232,7 +226,7 @@ const sortedModels = computed(() =>
   }),
 )
 
-const hasActiveFilter = computed(() => Boolean(query.value || vendorFilter.value || endpointFilter.value || groupFilter.value || tagFilter.value))
+const hasActiveFilter = computed(() => Boolean(query.value || vendorFilter.value))
 
 const vendorOptions = computed(() =>
   vendors.value.map((vendor) => ({
@@ -245,10 +239,6 @@ const vendorChipOptions = computed<FilterItem[]>(() =>
     .filter((vendor) => vendor.count > 0)
     .map((vendor) => ({ label: vendor.name, value: String(vendor.id), count: vendor.count })),
 )
-const endpointOptions = computed(() => countItems(models.value.flatMap((model) => model.supported_endpoints)))
-const groupOptions = computed(() => countItems(models.value.flatMap((model) => model.groups.map((group) => group.name))))
-const tagOptions = computed(() => countItems(models.value.flatMap((model) => model.tags)))
-
 async function load() {
   loading.value = true
   try {
@@ -265,21 +255,6 @@ async function load() {
 function resetFilters() {
   query.value = ''
   vendorFilter.value = ''
-  endpointFilter.value = ''
-  groupFilter.value = ''
-  tagFilter.value = ''
-}
-
-function countItems(values: string[]): FilterItem[] {
-  const counter = new Map<string, number>()
-  for (const value of values) {
-    const trimmed = String(value || '').trim()
-    if (!trimmed) continue
-    counter.set(trimmed, (counter.get(trimmed) || 0) + 1)
-  }
-  return Array.from(counter.entries())
-    .map(([value, count]) => ({ label: value, value, count }))
-    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
 }
 
 function totalCount(items: FilterItem[]): string {
@@ -291,9 +266,41 @@ function vendorName(id?: number | null): string {
   return vendors.value.find((vendor) => vendor.id === id)?.name || ''
 }
 
-function vendorInitial(model: ModelPlazaModelView): string {
-  const name = vendorName(model.vendor_id) || model.platform || model.model_name
-  return name.slice(0, 1).toUpperCase()
+interface VendorVisual {
+  icon: string
+  color: string
+  bg: string
+}
+
+const vendorVisuals: Record<string, VendorVisual> = {
+  openai: { icon: '◎', color: '#111827', bg: '#f3f4f6' },
+  deepseek: { icon: 'D', color: '#2563eb', bg: '#eff6ff' },
+  anthropic: { icon: '✣', color: '#d97706', bg: '#fff7ed' },
+  google: { icon: 'G', color: '#16a34a', bg: '#f0fdf4' },
+  xai: { icon: 'X', color: '#4b5563', bg: '#f8fafc' },
+  阿里巴巴: { icon: 'A', color: '#f97316', bg: '#fff7ed' },
+  智谱: { icon: 'Z', color: '#6366f1', bg: '#eef2ff' },
+  moonshot: { icon: 'M', color: '#64748b', bg: '#f8fafc' },
+  字节豆包: { icon: '豆', color: '#7c3aed', bg: '#f5f3ff' },
+  meta: { icon: '∞', color: '#2563eb', bg: '#eff6ff' },
+  mistral: { icon: 'M', color: '#dc2626', bg: '#fef2f2' },
+  cohere: { icon: 'C', color: '#0891b2', bg: '#ecfeff' },
+}
+
+function vendorVisual(name: string): VendorVisual {
+  return vendorVisuals[name.toLowerCase()] || vendorVisuals[name] || { icon: name.slice(0, 1).toUpperCase(), color: '#df714b', bg: '#fff3ec' }
+}
+
+function vendorIcon(name: string): string {
+  return vendorVisual(name).icon
+}
+
+function vendorStyle(name: string): Record<string, string> {
+  const visual = vendorVisual(name)
+  return {
+    '--vendor-color': visual.color,
+    '--vendor-bg': visual.bg,
+  }
 }
 
 function price(value: number | null | undefined): string {
@@ -441,17 +448,17 @@ onMounted(load)
   opacity: 0.45;
 }
 
-.filter-section {
+:deep(.filter-section) {
   border-top: 1px solid #eceff3;
   padding: 20px 0;
 }
 
-.filter-section:first-of-type {
+:deep(.filter-section:first-of-type) {
   border-top: 0;
   padding-top: 0;
 }
 
-.filter-section-title {
+:deep(.filter-section-title) {
   margin-bottom: 12px;
   display: flex;
   align-items: center;
@@ -459,24 +466,24 @@ onMounted(load)
   font-weight: 800;
 }
 
-.chevron {
+:deep(.chevron) {
   color: #71717a;
   font-size: 16px;
 }
 
-.filter-chip-wrap {
+:deep(.filter-chip-wrap) {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.filter-chip {
+:deep(.filter-chip) {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   border: 1px solid #e5e7eb;
   border-radius: 16px;
-  background: #fff;
+  background: var(--vendor-bg, #fff);
   padding: 8px 11px;
   color: #666;
   font-size: 15px;
@@ -484,17 +491,36 @@ onMounted(load)
   transition: all 150ms ease;
 }
 
-.filter-chip b {
+:deep(.vendor-chip-icon) {
+  display: inline-flex;
+  height: 22px;
+  width: 22px;
+  align-items: center;
+  justify-content: center;
   border-radius: 999px;
-  background: #f1f3f5;
+  background: #fff;
+  color: var(--vendor-color, #52525b);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+}
+
+:deep(.vendor-chip-icon.all) {
+  color: #71717a;
+}
+
+:deep(.filter-chip b) {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
   padding: 1px 8px;
   color: #777;
 }
 
-.filter-chip:hover,
-.filter-chip.active {
-  border-color: #cdd3da;
-  box-shadow: inset 0 0 0 1px #d8dde3, 0 2px 8px rgba(15, 23, 42, 0.08);
+:deep(.filter-chip:hover),
+:deep(.filter-chip.active) {
+  border-color: color-mix(in srgb, var(--vendor-color, #71717a) 34%, #cdd3da);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--vendor-color, #71717a) 18%, #d8dde3), 0 2px 8px rgba(15, 23, 42, 0.08);
   color: #222;
   transform: translateY(-1px);
 }
@@ -580,10 +606,11 @@ onMounted(load)
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: #fff3ec;
-  color: #df714b;
+  background: var(--vendor-bg, #fff3ec);
+  color: var(--vendor-color, #df714b);
   font-size: 28px;
   font-weight: 900;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9), 0 14px 24px color-mix(in srgb, var(--vendor-color, #df714b) 12%, transparent);
 }
 
 .copy-icon {

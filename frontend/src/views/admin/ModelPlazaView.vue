@@ -5,7 +5,7 @@
         <div>
           <h1 class="text-xl font-semibold text-gray-900 dark:text-white">模型广场管理</h1>
           <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            维护公开模型广场的厂商信息、展示文案、端点标签和价格覆盖。
+            维护公开模型广场的供应商信息、展示文案、端点标签和价格覆盖。
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
@@ -68,40 +68,64 @@
         <section class="card p-5">
           <div class="mb-4 flex items-center justify-between gap-3">
             <div>
-              <h2 class="text-base font-semibold text-gray-900 dark:text-white">厂商配置</h2>
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">用于模型卡片的归属和筛选。</p>
+              <h2 class="text-base font-semibold text-gray-900 dark:text-white">供应商区域</h2>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">内置模型品牌供应商，可勾选启用，并用于公开页筛选和模型卡片图标。</p>
             </div>
-            <button type="button" class="btn btn-primary btn-sm" @click="openVendorDialog()">
-              <Icon name="plus" size="sm" class="mr-1" />
-              新增
-            </button>
+            <div class="flex shrink-0 flex-wrap items-center gap-2">
+              <button type="button" class="btn btn-secondary btn-sm" :disabled="saving" @click="ensurePresets">
+                补齐预设
+              </button>
+              <button type="button" class="btn btn-primary btn-sm" :disabled="saving" @click="autoAssignVendors">
+                智能识别
+              </button>
+            </div>
           </div>
 
           <div v-if="loading" class="py-8 text-center text-sm text-gray-500">加载中...</div>
-          <div v-else-if="vendors.length === 0" class="py-8 text-center text-sm text-gray-500">暂无厂商</div>
-          <div v-else class="space-y-3">
+          <div v-else-if="vendors.length === 0" class="py-8 text-center text-sm text-gray-500">暂无供应商</div>
+          <div v-else class="grid gap-3">
             <div
               v-for="vendor in vendors"
               :key="vendor.id"
-              class="rounded-lg border border-gray-200 p-3 dark:border-dark-600"
+              class="vendor-admin-card"
+              :class="{ disabled: vendor.status !== 'active' }"
+              :style="vendorStyle(vendor.name)"
             >
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <div class="flex items-center gap-2">
-                    <span class="truncate font-medium text-gray-900 dark:text-white">{{ vendor.name }}</span>
+              <div class="flex items-start gap-3">
+                <span class="vendor-brand-mark">{{ vendorIcon(vendor.name) }}</span>
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="truncate text-sm font-semibold text-gray-900 dark:text-white">{{ vendor.name }}</span>
+                    <span class="rounded-full bg-white/70 px-2 py-0.5 text-xs font-semibold text-gray-600 shadow-sm dark:bg-dark-800 dark:text-gray-300">
+                      {{ vendorModelCount(vendor.id) }} 个模型
+                    </span>
                     <span :class="statusClass(vendor.status)">{{ statusLabel(vendor.status) }}</span>
                   </div>
                   <p class="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
-                    {{ vendor.description || '未填写描述' }}
+                    {{ vendor.description || presetDescription(vendor.name) || '用于模型卡片归属和公开页供应商筛选。' }}
                   </p>
-                  <div class="mt-2 text-xs text-gray-400">排序：{{ vendor.sort_order }}</div>
+                  <div v-if="presetPatterns(vendor.name).length" class="mt-2 flex flex-wrap gap-1">
+                    <span v-for="pattern in presetPatterns(vendor.name)" :key="pattern" class="rounded bg-white/70 px-1.5 py-0.5 font-mono text-[11px] text-gray-500 dark:bg-dark-800 dark:text-gray-300">
+                      {{ pattern }}
+                    </span>
+                  </div>
                 </div>
                 <div class="flex shrink-0 items-center gap-1">
-                  <button type="button" class="btn btn-secondary btn-sm" @click="openVendorDialog(vendor)">编辑</button>
+                  <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-600 shadow-sm dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300">
+                    <input type="checkbox" class="h-3.5 w-3.5 rounded border-gray-300" :checked="vendor.status === 'active'" :disabled="saving" @change="toggleVendorStatus(vendor)" />
+                    启用
+                  </label>
+                  <button type="button" class="btn btn-secondary btn-sm" @click="openVendorDialog(vendor)">修正</button>
                   <button type="button" class="btn btn-danger btn-sm" @click="deleteVendor(vendor)">删除</button>
                 </div>
               </div>
             </div>
+          </div>
+          <div class="mt-4 flex justify-end">
+            <button type="button" class="btn btn-secondary btn-sm" @click="openVendorDialog()">
+              <Icon name="plus" size="sm" class="mr-1" />
+              新增自定义供应商
+            </button>
           </div>
         </section>
 
@@ -147,8 +171,8 @@
                 <option value="enable">批量启用</option>
                 <option value="disable">批量禁用</option>
                 <option value="delete">批量删除</option>
-                <option value="set_vendor">设置厂商</option>
-                <option value="clear_vendor">清空厂商</option>
+                <option value="set_vendor">设置供应商</option>
+                <option value="clear_vendor">清空供应商</option>
                 <option value="set_tags">替换标签</option>
                 <option value="add_tags">追加标签</option>
                 <option value="remove_tags">移除标签</option>
@@ -187,7 +211,7 @@
                     <input type="checkbox" class="h-4 w-4 rounded border-gray-300" :checked="allFilteredSelected" @change="toggleAllFiltered" />
                   </th>
                   <th class="px-3 py-2">模型</th>
-                  <th class="px-3 py-2">厂商</th>
+                  <th class="px-3 py-2">供应商</th>
                   <th class="px-3 py-2">端点</th>
                   <th class="px-3 py-2">定价</th>
                   <th class="px-3 py-2">计费状态</th>
@@ -249,10 +273,10 @@
       </div>
     </div>
 
-    <BaseDialog :show="vendorDialogOpen" :title="editingVendor ? '编辑厂商' : '新增厂商'" @close="vendorDialogOpen = false">
+    <BaseDialog :show="vendorDialogOpen" :title="editingVendor ? '编辑供应商' : '新增供应商'" @close="vendorDialogOpen = false">
       <form class="space-y-4" @submit.prevent="saveVendor">
         <div>
-          <label class="input-label">厂商名称</label>
+          <label class="input-label">供应商名称</label>
           <input v-model.trim="vendorForm.name" class="input" required />
         </div>
         <div>
@@ -304,7 +328,7 @@
             </select>
           </div>
           <div>
-            <label class="input-label">厂商</label>
+            <label class="input-label">供应商</label>
             <select v-model="modelForm.vendor_id" class="input">
               <option :value="null">不指定</option>
               <option v-for="vendor in vendors" :key="vendor.id" :value="vendor.id">{{ vendor.name }}</option>
@@ -413,12 +437,14 @@ import type {
   ModelPlazaBillingSettings,
   ModelPlazaStatus,
   ModelPlazaVendor,
+  ModelPlazaVendorPreset,
   ModelPlazaVendorRequest,
 } from '@/api/admin/modelPlaza'
 
 const appStore = useAppStore()
 
 const vendors = ref<ModelPlazaVendor[]>([])
+const vendorPresets = ref<ModelPlazaVendorPreset[]>([])
 const models = ref<ModelPlazaModel[]>([])
 const loading = ref(false)
 const saving = ref(false)
@@ -520,6 +546,9 @@ async function loadAll() {
     vendors.value = vendorRows
     models.value = modelRows
     billingSettings.enabled = billing.enabled
+    if (vendorPresets.value.length === 0) {
+      vendorPresets.value = await modelPlazaAPI.listVendorPresets()
+    }
     selectedIds.value = selectedIds.value.filter((id) => modelRows.some((model) => model.id === id))
   } catch (error) {
     appStore.showError(errorMessage(error, '加载模型广场配置失败'))
@@ -542,6 +571,47 @@ async function saveBillingSettings() {
     appStore.showError(errorMessage(error, '保存计费设置失败'))
   } finally {
     billingSaving.value = false
+  }
+}
+
+async function ensurePresets() {
+  saving.value = true
+  try {
+    const result = await modelPlazaAPI.ensureVendorPresets()
+    appStore.showSuccess(result.created > 0 ? `已补齐 ${result.created} 个预设供应商` : '预设供应商已是最新')
+    await loadAll()
+  } catch (error) {
+    appStore.showError(errorMessage(error, '补齐预设供应商失败'))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function autoAssignVendors() {
+  saving.value = true
+  try {
+    await modelPlazaAPI.ensureVendorPresets()
+    const result = await modelPlazaAPI.autoAssignVendors()
+    appStore.showSuccess(result.updated > 0 ? `已智能识别 ${result.updated} 个未指定供应商的模型` : '没有需要智能识别的模型')
+    await loadAll()
+  } catch (error) {
+    appStore.showError(errorMessage(error, '智能识别供应商失败'))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function toggleVendorStatus(vendor: ModelPlazaVendor) {
+  const nextStatus: ModelPlazaStatus = vendor.status === 'active' ? 'disabled' : 'active'
+  saving.value = true
+  try {
+    await modelPlazaAPI.updateVendor(vendor.id, { ...vendor, status: nextStatus })
+    appStore.showSuccess(nextStatus === 'active' ? '供应商已启用' : '供应商已禁用')
+    await loadAll()
+  } catch (error) {
+    appStore.showError(errorMessage(error, '更新供应商状态失败'))
+  } finally {
+    saving.value = false
   }
 }
 
@@ -580,24 +650,24 @@ async function saveVendor() {
     } else {
       await modelPlazaAPI.createVendor(vendorForm)
     }
-    appStore.showSuccess('厂商已保存')
+    appStore.showSuccess('供应商已保存')
     vendorDialogOpen.value = false
     await loadAll()
   } catch (error) {
-    appStore.showError(errorMessage(error, '保存厂商失败'))
+    appStore.showError(errorMessage(error, '保存供应商失败'))
   } finally {
     saving.value = false
   }
 }
 
 async function deleteVendor(vendor: ModelPlazaVendor) {
-  if (!window.confirm(`确认删除厂商「${vendor.name}」吗？已关联模型会变为不指定厂商。`)) return
+  if (!window.confirm(`确认删除供应商「${vendor.name}」吗？已关联模型会变为不指定供应商。`)) return
   try {
     await modelPlazaAPI.removeVendor(vendor.id)
-    appStore.showSuccess('厂商已删除')
+    appStore.showSuccess('供应商已删除')
     await loadAll()
   } catch (error) {
-    appStore.showError(errorMessage(error, '删除厂商失败'))
+    appStore.showError(errorMessage(error, '删除供应商失败'))
   }
 }
 
@@ -779,6 +849,60 @@ function vendorName(id?: number | null): string {
   return vendors.value.find((vendor) => vendor.id === id)?.name || `#${id}`
 }
 
+function vendorModelCount(id: number): number {
+  return models.value.filter((model) => model.vendor_id === id).length
+}
+
+function presetForVendor(name: string): ModelPlazaVendorPreset | undefined {
+  const normalized = name.toLowerCase()
+  return vendorPresets.value.find((preset) => preset.name.toLowerCase() === normalized)
+}
+
+function presetDescription(name: string): string {
+  return presetForVendor(name)?.description || ''
+}
+
+function presetPatterns(name: string): string[] {
+  return presetForVendor(name)?.patterns || []
+}
+
+interface VendorVisual {
+  icon: string
+  color: string
+  bg: string
+}
+
+const vendorVisuals: Record<string, VendorVisual> = {
+  openai: { icon: '◎', color: '#111827', bg: '#f3f4f6' },
+  deepseek: { icon: 'D', color: '#2563eb', bg: '#eff6ff' },
+  anthropic: { icon: '✣', color: '#d97706', bg: '#fff7ed' },
+  google: { icon: 'G', color: '#16a34a', bg: '#f0fdf4' },
+  xai: { icon: 'X', color: '#4b5563', bg: '#f8fafc' },
+  阿里巴巴: { icon: 'A', color: '#f97316', bg: '#fff7ed' },
+  智谱: { icon: 'Z', color: '#6366f1', bg: '#eef2ff' },
+  moonshot: { icon: 'M', color: '#64748b', bg: '#f8fafc' },
+  字节豆包: { icon: '豆', color: '#7c3aed', bg: '#f5f3ff' },
+  meta: { icon: '∞', color: '#2563eb', bg: '#eff6ff' },
+  mistral: { icon: 'M', color: '#dc2626', bg: '#fef2f2' },
+  cohere: { icon: 'C', color: '#0891b2', bg: '#ecfeff' },
+}
+
+function vendorVisual(name: string): VendorVisual {
+  return vendorVisuals[name.toLowerCase()] || vendorVisuals[name] || { icon: name.slice(0, 1).toUpperCase(), color: '#52525b', bg: '#f4f4f5' }
+}
+
+function vendorIcon(name: string): string {
+  return vendorVisual(name).icon
+}
+
+function vendorStyle(name: string): Record<string, string> {
+  const visual = vendorVisual(name)
+  return {
+    '--vendor-color': visual.color,
+    '--vendor-bg': visual.bg,
+  }
+}
+
 function statusLabel(status: ModelPlazaStatus): string {
   return status === 'active' ? '启用' : '禁用'
 }
@@ -820,8 +944,8 @@ function batchActionLabel(action: ModelPlazaBatchAction): string {
     enable: '批量启用',
     disable: '批量禁用',
     delete: '批量删除',
-    set_vendor: '设置厂商',
-    clear_vendor: '清空厂商',
+    set_vendor: '设置供应商',
+    clear_vendor: '清空供应商',
     set_tags: '替换标签',
     add_tags: '追加标签',
     remove_tags: '移除标签',
@@ -842,3 +966,46 @@ function errorMessage(error: unknown, fallback: string): string {
 
 onMounted(loadAll)
 </script>
+
+<style scoped>
+.vendor-admin-card {
+  border: 1px solid rgba(209, 213, 219, 0.9);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, var(--vendor-bg, #f4f4f5), rgba(255, 255, 255, 0.95) 46%),
+    #fff;
+  padding: 12px;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease,
+    opacity 160ms ease;
+}
+
+.vendor-admin-card:hover {
+  border-color: color-mix(in srgb, var(--vendor-color, #71717a) 32%, #d1d5db);
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.vendor-admin-card.disabled {
+  opacity: 0.62;
+}
+
+.vendor-brand-mark {
+  display: inline-flex;
+  height: 38px;
+  width: 38px;
+  flex: 0 0 38px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: #fff;
+  color: var(--vendor-color, #52525b);
+  font-size: 18px;
+  font-weight: 900;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.8),
+    0 8px 18px color-mix(in srgb, var(--vendor-color, #71717a) 14%, transparent);
+}
+</style>
