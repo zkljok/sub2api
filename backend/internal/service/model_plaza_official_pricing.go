@@ -2,8 +2,6 @@ package service
 
 import "strings"
 
-var modelPlazaFallbackBillingService = NewBillingService(nil, nil)
-
 type modelPlazaOfficialPricingPreset struct {
 	Names       []string
 	Prefixes    []string
@@ -18,9 +16,6 @@ func officialModelPlazaPricing(modelName, platform string) (ModelPlazaPricingOve
 	name := normalizeOfficialPricingModelName(modelName)
 	if name == "" {
 		return ModelPlazaPricingOverride{}, false
-	}
-	if pricing := modelPlazaFallbackBillingService.getFallbackPricing(name); pricing != nil {
-		return modelPricingToModelPlazaOverride(pricing), true
 	}
 	for _, preset := range modelPlazaOfficialPricingPresets() {
 		for _, exact := range preset.Names {
@@ -37,27 +32,6 @@ func officialModelPlazaPricing(modelName, platform string) (ModelPlazaPricingOve
 	return ModelPlazaPricingOverride{}, false
 }
 
-func modelPricingToModelPlazaOverride(pricing *ModelPricing) ModelPlazaPricingOverride {
-	return ModelPlazaPricingOverride{
-		BillingMode:      BillingModeToken,
-		InputPrice:       pricePerMillionPtr(pricing.InputPricePerToken),
-		OutputPrice:      pricePerMillionPtr(pricing.OutputPricePerToken),
-		CacheWritePrice:  pricePerMillionPtr(pricing.CacheCreationPricePerToken),
-		CacheReadPrice:   pricePerMillionPtr(pricing.CacheReadPricePerToken),
-		ImageInputPrice:  pricePerMillionPtr(pricing.ImageInputPricePerToken),
-		ImageOutputPrice: pricePerMillionPtr(pricing.ImageOutputPricePerToken),
-		Intervals:        []ModelPlazaPricingIntervalView{},
-	}
-}
-
-func pricePerMillionPtr(value float64) *float64 {
-	if value == 0 {
-		return nil
-	}
-	converted := value * 1000000
-	return &converted
-}
-
 func (p modelPlazaOfficialPricingPreset) toOverride() ModelPlazaPricingOverride {
 	mode := p.BillingMode
 	if mode == "" {
@@ -65,10 +39,10 @@ func (p modelPlazaOfficialPricingPreset) toOverride() ModelPlazaPricingOverride 
 	}
 	return ModelPlazaPricingOverride{
 		BillingMode:     mode,
-		InputPrice:      cloneFloat64(p.Input),
-		OutputPrice:     cloneFloat64(p.Output),
-		CacheWritePrice: cloneFloat64(p.CacheWrite),
-		CacheReadPrice:  cloneFloat64(p.CacheRead),
+		InputPrice:      clonePositiveFloat64(p.Input),
+		OutputPrice:     clonePositiveFloat64(p.Output),
+		CacheWritePrice: clonePositiveFloat64(p.CacheWrite),
+		CacheReadPrice:  clonePositiveFloat64(p.CacheRead),
 		Intervals:       []ModelPlazaPricingIntervalView{},
 	}
 }
@@ -89,6 +63,13 @@ func cloneFloat64(value *float64) *float64 {
 	return &cloned
 }
 
+func clonePositiveFloat64(value *float64) *float64 {
+	if value == nil || *value <= 0 {
+		return nil
+	}
+	return cloneFloat64(value)
+}
+
 func modelPlazaFloat64Ptr(value float64) *float64 { return &value }
 
 func modelPlazaOfficialPricingPresets() []modelPlazaOfficialPricingPreset {
@@ -100,10 +81,13 @@ func modelPlazaOfficialPricingPresets() []modelPlazaOfficialPricingPreset {
 		tokenPreset([]string{"gpt-4.1-nano"}, nil, 0.1, 0.4, 0.025, 0.025),
 		tokenPreset([]string{"o3"}, []string{"o3-"}, 2, 8, 0.5, 0.5),
 		tokenPreset([]string{"o4-mini"}, []string{"o4-mini-"}, 1.1, 4.4, 0.275, 0.275),
-		tokenPreset([]string{"gpt-3.5-turbo"}, nil, 0.5, 1.5, 0, 0),
 		tokenPreset([]string{"text-embedding-3-small"}, nil, 0.02, 0, 0, 0),
 		tokenPreset([]string{"text-embedding-3-large"}, nil, 0.13, 0, 0, 0),
 
+		tokenPreset([]string{"claude-fable-5"}, nil, 10, 50, 12.5, 1),
+		tokenPreset([]string{"claude-opus-5"}, nil, 5, 25, 6.25, 0.5),
+		tokenPreset([]string{"claude-sonnet-5"}, nil, 3, 15, 3.75, 0.3),
+		tokenPreset([]string{"claude-haiku-4.5", "claude-haiku-4-5"}, nil, 1, 5, 1.25, 0.1),
 		tokenPreset([]string{"claude-opus-4.1", "claude-opus-4-1"}, []string{"claude-opus-4"}, 15, 75, 18.75, 1.5),
 		tokenPreset([]string{"claude-sonnet-4.5", "claude-sonnet-4-5"}, []string{"claude-sonnet-4"}, 3, 15, 3.75, 0.3),
 		tokenPreset([]string{"claude-haiku-3.5", "claude-3-5-haiku"}, nil, 0.8, 4, 1, 0.08),
@@ -111,15 +95,16 @@ func modelPlazaOfficialPricingPresets() []modelPlazaOfficialPricingPreset {
 		tokenPreset([]string{"claude-3-sonnet"}, nil, 3, 15, 3.75, 0.3),
 		tokenPreset([]string{"claude-3-haiku"}, nil, 0.25, 1.25, 0.3, 0.03),
 
+		tokenPreset([]string{"gemini-3.6-flash"}, nil, 0.3, 2.5, 0.03, 0.03),
+		tokenPreset([]string{"gemini-3.5-flash"}, nil, 0.15, 1.25, 0.02, 0.02),
+		tokenPreset([]string{"gemini-3.1-flash-lite"}, nil, 0.15, 1.25, 0.02, 0.02),
 		tokenPreset([]string{"gemini-2.5-pro"}, nil, 1.25, 10, 0.31, 0.31),
-		tokenPreset([]string{"gemini-2.5-flash"}, nil, 0.3, 2.5, 0.075, 0.075),
+		tokenPreset([]string{"gemini-2.5-flash"}, nil, 0.3, 2.5, 0.03, 0.03),
 		tokenPreset([]string{"gemini-2.5-flash-lite"}, nil, 0.1, 0.4, 0.025, 0.025),
 		tokenPreset([]string{"gemini-1.5-pro"}, nil, 1.25, 5, 0.3125, 0.3125),
 		tokenPreset([]string{"gemini-1.5-flash"}, nil, 0.075, 0.3, 0.01875, 0.01875),
 
-		tokenPreset([]string{"grok-4"}, []string{"grok-4-"}, 3, 15, 0.75, 0.75),
-		tokenPreset([]string{"grok-3"}, []string{"grok-3-"}, 3, 15, 0.75, 0.75),
-		tokenPreset([]string{"grok-3-mini"}, []string{"grok-3-mini-"}, 0.3, 0.5, 0.075, 0.075),
+		tokenPreset([]string{"grok-4.5", "grok-4.5-latest", "grok"}, nil, 2, 6, 0.5, 0.5),
 	}
 }
 
