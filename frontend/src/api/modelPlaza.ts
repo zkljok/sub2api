@@ -58,6 +58,7 @@ export interface ModelPlazaModel {
   name_rule: ModelPlazaNameRule
   sort_order: number
   pricing_override: ModelPlazaPricing
+  billing_status?: 'applied' | 'display_only' | 'unpriced'
   auto_synced: boolean
   created_at: string
   updated_at: string

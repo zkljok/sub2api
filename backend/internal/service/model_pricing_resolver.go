@@ -40,10 +40,12 @@ type ResolvedPricing struct {
 }
 
 // ModelPricingResolver 统一模型定价解析器。
-// 解析链：Channel → LiteLLM → Fallback。
+// 默认解析链：Channel → LiteLLM → Fallback。
+// 当模型广场真实计费开关启用时：ModelPlaza → Channel → LiteLLM → Fallback。
 type ModelPricingResolver struct {
-	channelService *ChannelService
-	billingService *BillingService
+	channelService    *ChannelService
+	billingService    *BillingService
+	modelPlazaService *ModelPlazaService
 }
 
 // NewModelPricingResolver 创建定价解析器实例
@@ -52,6 +54,12 @@ func NewModelPricingResolver(channelService *ChannelService, billingService *Bil
 		channelService: channelService,
 		billingService: billingService,
 	}
+}
+
+func ProvideModelPricingResolver(channelService *ChannelService, billingService *BillingService, modelPlazaService *ModelPlazaService) *ModelPricingResolver {
+	resolver := NewModelPricingResolver(channelService, billingService)
+	resolver.modelPlazaService = modelPlazaService
+	return resolver
 }
 
 // PricingInput 定价解析输入
@@ -64,6 +72,10 @@ type PricingInput struct {
 // 1. 获取基础定价（LiteLLM → Fallback）
 // 2. 如果指定了 GroupID，查找渠道定价并覆盖
 func (r *ModelPricingResolver) Resolve(ctx context.Context, input PricingInput) *ResolvedPricing {
+	if resolved := r.resolveModelPlazaPricing(ctx, input.Model); resolved != nil {
+		return resolved
+	}
+
 	var chPricing *ChannelModelPricing
 	if input.GroupID != nil && r.channelService != nil {
 		chPricing = r.channelService.GetChannelModelPricing(ctx, *input.GroupID, input.Model)
@@ -103,6 +115,22 @@ func (r *ModelPricingResolver) Resolve(ctx context.Context, input PricingInput) 
 		r.applyChannelOverrides(ctx, *input.GroupID, input.Model, resolved)
 	}
 
+	return resolved
+}
+
+func (r *ModelPricingResolver) resolveModelPlazaPricing(ctx context.Context, model string) *ResolvedPricing {
+	if r == nil || r.modelPlazaService == nil {
+		return nil
+	}
+	resolved, ok, err := r.modelPlazaService.ResolveBillingPricing(ctx, model)
+	if err != nil {
+		slog.Debug("failed to resolve model plaza pricing, using existing billing chain",
+			"model", model, "error", err)
+		return nil
+	}
+	if !ok {
+		return nil
+	}
 	return resolved
 }
 

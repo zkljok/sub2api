@@ -48,6 +48,10 @@ type modelPlazaBatchRequest struct {
 	Endpoints []string                      `json:"endpoints"`
 }
 
+type modelPlazaBillingSettingsRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
 func (h *ModelPlazaHandler) ListVendors(c *gin.Context) {
 	items, err := h.service.ListVendors(c.Request.Context(), true)
 	if err != nil {
@@ -110,12 +114,35 @@ func (h *ModelPlazaHandler) DeleteVendor(c *gin.Context) {
 }
 
 func (h *ModelPlazaHandler) ListModels(c *gin.Context) {
-	items, err := h.service.ListModels(c.Request.Context(), true)
+	items, err := h.service.ListModelsForAdmin(c.Request.Context(), true)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
 	response.Success(c, items)
+}
+
+func (h *ModelPlazaHandler) GetBillingSettings(c *gin.Context) {
+	settings, err := h.service.GetBillingSettings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, settings)
+}
+
+func (h *ModelPlazaHandler) UpdateBillingSettings(c *gin.Context) {
+	var req modelPlazaBillingSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	settings, err := h.service.UpdateBillingSettings(c.Request.Context(), service.ModelPlazaBillingSettings{Enabled: req.Enabled})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, settings)
 }
 
 func (h *ModelPlazaHandler) CreateModel(c *gin.Context) {

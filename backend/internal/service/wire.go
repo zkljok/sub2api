@@ -776,8 +776,8 @@ var ProviderSet = wire.NewSet(
 	ProvideScheduledTestRunnerService,
 	NewGroupCapacityService,
 	NewChannelService,
-	NewModelPlazaService,
-	NewModelPricingResolver,
+	ProvideModelPlazaService,
+	ProvideModelPricingResolver,
 	NewContentModerationService,
 	NewAffiliateService,
 	ProvidePaymentConfigService,
@@ -789,6 +789,10 @@ var ProviderSet = wire.NewSet(
 	NewChannelMonitorRequestTemplateService,
 	ProvideUserPlatformQuotaUsageFlusher,
 )
+
+func ProvideModelPlazaService(repo ModelPlazaRepository, accountRepo AccountRepository, channelService *ChannelService, settingRepo SettingRepository) *ModelPlazaService {
+	return NewModelPlazaService(repo, accountRepo, channelService, settingRepo)
+}
 
 // ProvideUserPlatformQuotaUsageFlusher 创建并启动 UserPlatformQuotaUsageFlusher。
 func ProvideUserPlatformQuotaUsageFlusher(cfg *config.Config, cache BillingCache, quotaRepo UserPlatformQuotaRepository, tw *TimingWheelService) *UserPlatformQuotaUsageFlusher {

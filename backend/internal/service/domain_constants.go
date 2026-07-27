@@ -381,6 +381,10 @@ const (
 	// sidebar entry is hidden. Defaults to false (opt-in feature).
 	SettingKeyAvailableChannelsEnabled = "available_channels_enabled"
 
+	// SettingKeyModelPlazaBillingSettings stores whether model plaza prices participate
+	// in real billing. Defaults to false so upgrades keep the existing billing behavior.
+	SettingKeyModelPlazaBillingSettings = "model_plaza_billing_settings"
+
 	// SettingKeyUpstreamBillingProbeSettings stores the global enable switch and interval
 	// for probing remote Sub2API API-key billing metadata.
 	SettingKeyUpstreamBillingProbeSettings = "upstream_billing_probe_settings"

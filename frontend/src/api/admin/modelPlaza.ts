@@ -48,6 +48,10 @@ export interface ModelPlazaBatchRequest {
   endpoints?: string[]
 }
 
+export interface ModelPlazaBillingSettings {
+  enabled: boolean
+}
+
 export async function listVendors(): Promise<ModelPlazaVendor[]> {
   const { data } = await apiClient.get<ModelPlazaVendor[]>('/admin/model-plaza/vendors')
   return data
@@ -69,6 +73,16 @@ export async function removeVendor(id: number): Promise<void> {
 
 export async function listModels(): Promise<ModelPlazaModel[]> {
   const { data } = await apiClient.get<ModelPlazaModel[]>('/admin/model-plaza/models')
+  return data
+}
+
+export async function getBillingSettings(): Promise<ModelPlazaBillingSettings> {
+  const { data } = await apiClient.get<ModelPlazaBillingSettings>('/admin/model-plaza/billing-settings')
+  return data
+}
+
+export async function updateBillingSettings(req: ModelPlazaBillingSettings): Promise<ModelPlazaBillingSettings> {
+  const { data } = await apiClient.put<ModelPlazaBillingSettings>('/admin/model-plaza/billing-settings', req)
   return data
 }
 
@@ -102,6 +116,8 @@ export default {
   updateVendor,
   removeVendor,
   listModels,
+  getBillingSettings,
+  updateBillingSettings,
   createModel,
   updateModel,
   removeModel,

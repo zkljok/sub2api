@@ -176,10 +176,15 @@ type ModelPlazaService struct {
 	repo           ModelPlazaRepository
 	accountRepo    AccountRepository
 	channelService *ChannelService
+	settingRepo    SettingRepository
 }
 
-func NewModelPlazaService(repo ModelPlazaRepository, accountRepo AccountRepository, channelService *ChannelService) *ModelPlazaService {
-	return &ModelPlazaService{repo: repo, accountRepo: accountRepo, channelService: channelService}
+func NewModelPlazaService(repo ModelPlazaRepository, accountRepo AccountRepository, channelService *ChannelService, settingRepo ...SettingRepository) *ModelPlazaService {
+	svc := &ModelPlazaService{repo: repo, accountRepo: accountRepo, channelService: channelService}
+	if len(settingRepo) > 0 {
+		svc.settingRepo = settingRepo[0]
+	}
+	return svc
 }
 
 func (s *ModelPlazaService) ListVendors(ctx context.Context, includeDisabled bool) ([]ModelPlazaVendor, error) {

@@ -129,6 +129,8 @@ func registerModelPlazaRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		plaza.POST("/vendors", h.Admin.ModelPlaza.CreateVendor)
 		plaza.PUT("/vendors/:id", h.Admin.ModelPlaza.UpdateVendor)
 		plaza.DELETE("/vendors/:id", h.Admin.ModelPlaza.DeleteVendor)
+		plaza.GET("/billing-settings", h.Admin.ModelPlaza.GetBillingSettings)
+		plaza.PUT("/billing-settings", h.Admin.ModelPlaza.UpdateBillingSettings)
 		plaza.GET("/models", h.Admin.ModelPlaza.ListModels)
 		plaza.POST("/models", h.Admin.ModelPlaza.CreateModel)
 		plaza.POST("/batch/models", h.Admin.ModelPlaza.BatchModels)

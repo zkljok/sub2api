@@ -43,6 +43,27 @@
         </div>
       </div>
 
+      <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/30">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-sm font-semibold text-amber-950 dark:text-amber-100">真实计费价格来源</h2>
+            <p class="mt-1 text-xs text-amber-800 dark:text-amber-200">
+              开启后，真实扣费会优先读取模型广场价格；关闭后保持原有渠道 / 官方定价 / fallback 逻辑。
+            </p>
+          </div>
+          <label class="inline-flex cursor-pointer items-center gap-3 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-950 shadow-sm dark:border-amber-800 dark:bg-dark-900 dark:text-amber-100">
+            <input
+              v-model="billingSettings.enabled"
+              type="checkbox"
+              class="h-4 w-4 rounded border-amber-300 text-primary-600"
+              :disabled="billingSaving"
+              @change="saveBillingSettings"
+            />
+            使用模型广场价格参与真实计费
+          </label>
+        </div>
+      </div>
+
       <div class="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
         <section class="card p-5">
           <div class="mb-4 flex items-center justify-between gap-3">
@@ -169,16 +190,17 @@
                   <th class="px-3 py-2">厂商</th>
                   <th class="px-3 py-2">端点</th>
                   <th class="px-3 py-2">定价</th>
+                  <th class="px-3 py-2">计费状态</th>
                   <th class="px-3 py-2">状态</th>
                   <th class="px-3 py-2 text-right">操作</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
                 <tr v-if="loading">
-                  <td colspan="7" class="px-3 py-10 text-center text-sm text-gray-500">加载中...</td>
+                  <td colspan="8" class="px-3 py-10 text-center text-sm text-gray-500">加载中...</td>
                 </tr>
                 <tr v-else-if="filteredModels.length === 0">
-                  <td colspan="7" class="px-3 py-10 text-center text-sm text-gray-500">暂无模型</td>
+                  <td colspan="8" class="px-3 py-10 text-center text-sm text-gray-500">暂无模型</td>
                 </tr>
                 <tr v-for="model in filteredModels" v-else :key="model.id" class="align-top">
                   <td class="px-3 py-3">
@@ -205,6 +227,9 @@
                   <td class="px-3 py-3 text-sm text-gray-600 dark:text-gray-300">
                     <span v-if="hasPricingOverride(model.pricing_override)" class="inline-flex rounded bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">价格覆盖</span>
                     <span v-else class="inline-flex rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500 dark:bg-dark-700 dark:text-gray-300">自动来源</span>
+                  </td>
+                  <td class="px-3 py-3">
+                    <span :class="billingStatusClass(model.billing_status)">{{ billingStatusLabel(model.billing_status) }}</span>
                   </td>
                   <td class="px-3 py-3">
                     <span :class="statusClass(model.status)">{{ statusLabel(model.status) }}</span>
@@ -385,6 +410,7 @@ import type {
   ModelPlazaModel,
   ModelPlazaModelRequest,
   ModelPlazaPricing,
+  ModelPlazaBillingSettings,
   ModelPlazaStatus,
   ModelPlazaVendor,
   ModelPlazaVendorRequest,
@@ -396,6 +422,7 @@ const vendors = ref<ModelPlazaVendor[]>([])
 const models = ref<ModelPlazaModel[]>([])
 const loading = ref(false)
 const saving = ref(false)
+const billingSaving = ref(false)
 const syncing = ref(false)
 const search = ref('')
 const selectedIds = ref<number[]>([])
@@ -410,6 +437,9 @@ const editingVendor = ref<ModelPlazaVendor | null>(null)
 const editingModel = ref<ModelPlazaModel | null>(null)
 const tagsText = ref('')
 const endpointsText = ref('')
+const billingSettings = reactive<ModelPlazaBillingSettings>({
+  enabled: false,
+})
 
 const emptyPricing = (): ModelPlazaPricing => ({
   billing_mode: '',
@@ -482,14 +512,36 @@ const pricedModelCount = computed(() => models.value.filter((model) => hasPricin
 async function loadAll() {
   loading.value = true
   try {
-    const [vendorRows, modelRows] = await Promise.all([modelPlazaAPI.listVendors(), modelPlazaAPI.listModels()])
+    const [vendorRows, modelRows, billing] = await Promise.all([
+      modelPlazaAPI.listVendors(),
+      modelPlazaAPI.listModels(),
+      modelPlazaAPI.getBillingSettings(),
+    ])
     vendors.value = vendorRows
     models.value = modelRows
+    billingSettings.enabled = billing.enabled
     selectedIds.value = selectedIds.value.filter((id) => modelRows.some((model) => model.id === id))
   } catch (error) {
     appStore.showError(errorMessage(error, '加载模型广场配置失败'))
   } finally {
     loading.value = false
+  }
+}
+
+async function saveBillingSettings() {
+  billingSaving.value = true
+  const nextEnabled = billingSettings.enabled
+  try {
+    const settings = await modelPlazaAPI.updateBillingSettings({ enabled: nextEnabled })
+    billingSettings.enabled = settings.enabled
+    appStore.showSuccess(settings.enabled ? '模型广场价格已参与真实计费' : '已恢复原有计费逻辑')
+    const modelRows = await modelPlazaAPI.listModels()
+    models.value = modelRows
+  } catch (error) {
+    billingSettings.enabled = !nextEnabled
+    appStore.showError(errorMessage(error, '保存计费设置失败'))
+  } finally {
+    billingSaving.value = false
   }
 }
 
@@ -735,6 +787,22 @@ function statusClass(status: ModelPlazaStatus): string {
   return status === 'active'
     ? 'inline-flex rounded bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
     : 'inline-flex rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-dark-600 dark:text-gray-300'
+}
+
+function billingStatusLabel(status?: string): string {
+  if (status === 'applied') return '已作为计费价'
+  if (status === 'display_only') return '仅展示'
+  return '未配置价格'
+}
+
+function billingStatusClass(status?: string): string {
+  if (status === 'applied') {
+    return 'inline-flex rounded bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+  }
+  if (status === 'display_only') {
+    return 'inline-flex rounded bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
+  }
+  return 'inline-flex rounded bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700 dark:bg-rose-900/30 dark:text-rose-300'
 }
 
 function ruleLabel(rule: string): string {
