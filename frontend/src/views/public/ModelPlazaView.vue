@@ -30,20 +30,47 @@
         </div>
       </section>
 
-      <div class="grid gap-5 lg:grid-cols-[450px_minmax(0,1fr)]">
-        <aside class="filter-panel">
+      <div class="model-plaza-layout" :class="{ 'filters-collapsed': filterCollapsed }">
+        <aside class="filter-panel" :class="{ collapsed: filterCollapsed }">
           <div class="mb-6 flex items-start justify-between gap-3">
-            <div>
+            <div v-if="!filterCollapsed">
               <h2 class="text-lg font-bold">筛选</h2>
               <p class="mt-1 text-sm text-zinc-500">按模型供应商细化模型。</p>
             </div>
-            <button type="button" class="reset-button" :disabled="!hasActiveFilter" @click="resetFilters">
+            <button
+              type="button"
+              class="collapse-button"
+              :title="filterCollapsed ? '展开筛选' : '收起筛选'"
+              @click="filterCollapsed = !filterCollapsed"
+            >
+              <Icon :name="filterCollapsed ? 'chevronRight' : 'chevronLeft'" size="sm" />
+            </button>
+            <button v-if="!filterCollapsed" type="button" class="reset-button" :disabled="!hasActiveFilter" @click="resetFilters">
               <Icon name="refresh" size="sm" />
               重置
             </button>
           </div>
 
-          <FilterSection title="所有供应商" :items="vendorChipOptions" :active="vendorFilter" @select="vendorFilter = $event" />
+          <div v-if="filterCollapsed" class="collapsed-filter-tools">
+            <button type="button" class="mini-filter-button" :class="{ active: !vendorFilter }" title="所有供应商" @click="vendorFilter = ''">
+              <span>•</span>
+              <b>{{ models.length }}</b>
+            </button>
+            <button
+              v-for="item in vendorChipOptions.slice(0, 8)"
+              :key="item.value"
+              type="button"
+              class="mini-filter-button"
+              :class="{ active: vendorFilter === item.value }"
+              :style="vendorStyle(item.label)"
+              :title="item.label"
+              @click="vendorFilter = item.value"
+            >
+              <span>{{ vendorIcon(item.label) }}</span>
+              <b>{{ item.count }}</b>
+            </button>
+          </div>
+          <FilterSection v-else title="所有供应商" :items="vendorChipOptions" :active="vendorFilter" @select="vendorFilter = $event" />
         </aside>
 
         <section class="min-w-0">
@@ -52,10 +79,6 @@
               {{ filteredModels.length }} <span class="font-normal text-zinc-500">个模型</span>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-              <div class="segmented">
-                <button type="button" :class="{ active: priceMode === 'standard' }" @click="priceMode = 'standard'">标准</button>
-                <button type="button" :class="{ active: priceMode === 'recharge' }" @click="priceMode = 'recharge'">充值</button>
-              </div>
               <div class="segmented">
                 <button type="button" :class="{ active: unitMode === 'million' }" @click="unitMode = 'million'">/1M</button>
                 <button type="button" :class="{ active: unitMode === 'thousand' }" @click="unitMode = 'thousand'">/1K</button>
@@ -193,7 +216,7 @@ const query = ref('')
 const vendorFilter = ref('')
 const loading = ref(false)
 const sortAsc = ref(true)
-const priceMode = ref<'standard' | 'recharge'>('standard')
+const filterCollapsed = ref(false)
 const unitMode = ref<'million' | 'thousand'>('million')
 
 const dashboardPath = computed(() => (authStore.isAdmin ? '/admin/dashboard' : '/dashboard'))
@@ -257,7 +280,7 @@ function resetFilters() {
 }
 
 function totalCount(items: FilterItem[]): string {
-  return String(items.reduce((sum, item) => sum + item.count, 0) || models.value.length)
+  return String(models.value.length || items.reduce((sum, item) => sum + item.count, 0))
 }
 
 function vendorName(id?: number | null): string {
@@ -403,6 +426,22 @@ onMounted(load)
   font-weight: 700;
 }
 
+.model-plaza-layout {
+  display: grid;
+  gap: 20px;
+}
+
+@media (min-width: 1024px) {
+  .model-plaza-layout {
+    grid-template-columns: 340px minmax(0, 1fr);
+    transition: grid-template-columns 180ms ease;
+  }
+
+  .model-plaza-layout.filters-collapsed {
+    grid-template-columns: 78px minmax(0, 1fr);
+  }
+}
+
 .filter-panel {
   position: sticky;
   top: 88px;
@@ -415,6 +454,14 @@ onMounted(load)
   box-shadow: 0 18px 42px rgba(15, 23, 42, 0.06);
   scrollbar-width: thin;
   scrollbar-color: #d4d4d8 transparent;
+  transition:
+    padding 180ms ease,
+    border-radius 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.filter-panel.collapsed {
+  padding: 14px 10px;
 }
 
 .filter-panel::-webkit-scrollbar {
@@ -441,6 +488,67 @@ onMounted(load)
 
 .reset-button:disabled {
   opacity: 0.45;
+}
+
+.collapse-button {
+  display: inline-flex;
+  height: 36px;
+  width: 36px;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #fff;
+  color: #71717a;
+  transition: all 150ms ease;
+}
+
+.collapse-button:hover {
+  border-color: #bae6fd;
+  background: #f0f9ff;
+  color: #0284c7;
+}
+
+.collapsed-filter-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.mini-filter-button {
+  display: inline-flex;
+  min-height: 46px;
+  width: 52px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: var(--vendor-bg, #fff);
+  color: var(--vendor-color, #52525b);
+  font-size: 12px;
+  font-weight: 800;
+  transition: all 150ms ease;
+}
+
+.mini-filter-button span {
+  line-height: 1;
+}
+
+.mini-filter-button b {
+  color: #71717a;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.mini-filter-button:hover,
+.mini-filter-button.active {
+  border-color: color-mix(in srgb, var(--vendor-color, #71717a) 34%, #cdd3da);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
 }
 
 :deep(.filter-section) {

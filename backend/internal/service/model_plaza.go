@@ -461,14 +461,42 @@ func (s *ModelPlazaService) Snapshot(ctx context.Context) (*ModelPlazaSnapshot, 
 	if err != nil {
 		return nil, err
 	}
-	channels, err := s.channelService.ListAvailable(ctx)
-	if err != nil {
+	entries := make(map[string]*ModelPlazaModelView)
+	activeMetadata := make([]ModelPlazaModel, 0, len(metadata))
+	for _, meta := range metadata {
+		if meta.Status != ModelPlazaStatusActive {
+			continue
+		}
+		activeMetadata = append(activeMetadata, meta)
+		entry := &ModelPlazaModelView{
+			ID:                 meta.ID,
+			ModelName:          meta.ModelName,
+			DisplayName:        firstNonEmptyModelPlazaValue(meta.DisplayName, meta.ModelName),
+			Description:        meta.Description,
+			Icon:               meta.Icon,
+			Tags:               append([]string{}, meta.Tags...),
+			VendorID:           meta.VendorID,
+			SortOrder:          meta.SortOrder,
+			SupportedEndpoints: append([]string{}, meta.Endpoints...),
+			PricingSource:      "account",
+		}
+		if meta.PricingOverride.IsConfigured() {
+			entry.Pricing = pricingViewFromChannel(pricingFromOverride(meta.PricingOverride))
+			entry.PricingSource = "override"
+		}
+		entries[modelPlazaEntryKey(meta)] = entry
+	}
+
+	if err := s.enrichEntriesFromAccounts(ctx, entries, activeMetadata); err != nil {
 		return nil, err
 	}
 
-	entries := make(map[string]*ModelPlazaModelView)
-	if err := s.addAccountEntries(ctx, entries); err != nil {
-		return nil, err
+	channels := []AvailableChannel{}
+	if s.channelService != nil {
+		channels, err = s.channelService.ListAvailable(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	for _, channel := range channels {
@@ -488,46 +516,18 @@ func (s *ModelPlazaService) Snapshot(ctx context.Context) (*ModelPlazaSnapshot, 
 			continue
 		}
 		for _, supported := range channel.SupportedModels {
-			key := strings.ToLower(strings.TrimSpace(supported.Name))
-			if key == "" {
+			entry := findModelPlazaEntry(entries, activeMetadata, supported.Name)
+			if entry == nil {
 				continue
 			}
-			entry, ok := entries[key]
-			if !ok {
-				entry = &ModelPlazaModelView{
-					ModelName: supported.Name, DisplayName: supported.Name, Platform: supported.Platform,
-					Tags: []string{}, Groups: []ModelPlazaGroup{}, SupportedEndpoints: defaultEndpointsForPlatform(supported.Platform),
-					Pricing: pricingViewFromChannel(supported.Pricing), PricingSource: "channel",
-				}
-				entries[key] = entry
+			if entry.Platform == "" {
+				entry.Platform = supported.Platform
 			}
 			entry.Groups = mergeModelPlazaGroups(entry.Groups, publicGroups)
 			entry.SupportedEndpoints = mergeStrings(entry.SupportedEndpoints, defaultEndpointsForPlatform(supported.Platform))
 			if entry.Pricing == nil && supported.Pricing != nil {
 				entry.Pricing = pricingViewFromChannel(supported.Pricing)
-			}
-		}
-	}
-
-	for _, meta := range metadata {
-		if meta.Status != ModelPlazaStatusActive {
-			continue
-		}
-		for _, entry := range entries {
-			if !matchesModelPlazaRule(meta, entry.ModelName) {
-				continue
-			}
-			entry.ID = meta.ID
-			entry.DisplayName = firstNonEmptyModelPlazaValue(meta.DisplayName, entry.ModelName)
-			entry.Description = meta.Description
-			entry.Icon = meta.Icon
-			entry.Tags = append([]string{}, meta.Tags...)
-			entry.VendorID = meta.VendorID
-			entry.SortOrder = meta.SortOrder
-			entry.SupportedEndpoints = mergeStrings(entry.SupportedEndpoints, meta.Endpoints)
-			if meta.PricingOverride.IsConfigured() {
-				entry.Pricing = pricingViewFromChannel(pricingFromOverride(meta.PricingOverride))
-				entry.PricingSource = "override"
+				entry.PricingSource = "channel"
 			}
 		}
 	}
@@ -560,7 +560,21 @@ func (s *ModelPlazaService) Snapshot(ctx context.Context) (*ModelPlazaSnapshot, 
 	}, nil
 }
 
-func (s *ModelPlazaService) addAccountEntries(ctx context.Context, entries map[string]*ModelPlazaModelView) error {
+func modelPlazaEntryKey(meta ModelPlazaModel) string {
+	return strings.ToLower(strings.TrimSpace(meta.ModelName))
+}
+
+func findModelPlazaEntry(entries map[string]*ModelPlazaModelView, metadata []ModelPlazaModel, modelName string) *ModelPlazaModelView {
+	for _, meta := range metadata {
+		if !matchesModelPlazaRule(meta, modelName) {
+			continue
+		}
+		return entries[modelPlazaEntryKey(meta)]
+	}
+	return nil
+}
+
+func (s *ModelPlazaService) enrichEntriesFromAccounts(ctx context.Context, entries map[string]*ModelPlazaModelView, metadata []ModelPlazaModel) error {
 	if s.accountRepo == nil {
 		return nil
 	}
@@ -575,22 +589,9 @@ func (s *ModelPlazaService) addAccountEntries(ctx context.Context, entries map[s
 			continue
 		}
 		for _, modelName := range modelPlazaModelNamesFromAccount(account) {
-			key := strings.ToLower(strings.TrimSpace(modelName))
-			if key == "" {
+			entry := findModelPlazaEntry(entries, metadata, modelName)
+			if entry == nil {
 				continue
-			}
-			entry, ok := entries[key]
-			if !ok {
-				entry = &ModelPlazaModelView{
-					ModelName:          modelName,
-					DisplayName:        modelName,
-					Platform:           account.Platform,
-					Tags:               []string{},
-					Groups:             []ModelPlazaGroup{},
-					SupportedEndpoints: defaultEndpointsForPlatform(account.Platform),
-					PricingSource:      "account",
-				}
-				entries[key] = entry
 			}
 			entry.Groups = mergeModelPlazaGroups(entry.Groups, publicGroups)
 			entry.SupportedEndpoints = mergeStrings(entry.SupportedEndpoints, defaultEndpointsForPlatform(account.Platform))

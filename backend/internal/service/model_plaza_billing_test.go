@@ -214,3 +214,51 @@ func TestModelPlazaAdminBillingStatus(t *testing.T) {
 		t.Fatalf("empty status = %q", rows[1].BillingStatus)
 	}
 }
+
+func TestModelPlazaSnapshotUsesActiveAdminModelsAsPublicBoundary(t *testing.T) {
+	input, output := 99.0, 99.0
+	svc := NewModelPlazaService(
+		&modelPlazaBillingRepoStub{
+			models: []ModelPlazaModel{
+				{
+					ID:          56,
+					ModelName:   "gpt-5.5",
+					DisplayName: "gpt-5.5",
+					Status:      ModelPlazaStatusActive,
+					NameRule:    ModelPlazaNameRuleExact,
+					Endpoints:   []string{"chat-completions"},
+					PricingOverride: ModelPlazaPricingOverride{
+						BillingMode:     BillingModeToken,
+						InputPrice:      &input,
+						OutputPrice:     &output,
+						CacheWritePrice: &input,
+						CacheReadPrice:  &output,
+					},
+				},
+				{
+					ID:        57,
+					ModelName: "hidden-model",
+					Status:    ModelPlazaStatusDisabled,
+					NameRule:  ModelPlazaNameRuleExact,
+				},
+			},
+		},
+		nil,
+		nil,
+		&modelPlazaBillingSettingRepoStub{},
+	)
+
+	snapshot, err := svc.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if got, want := len(snapshot.Models), 1; got != want {
+		t.Fatalf("models length = %d, want %d", got, want)
+	}
+	if got, want := snapshot.Models[0].ModelName, "gpt-5.5"; got != want {
+		t.Fatalf("model name = %q, want %q", got, want)
+	}
+	if got, want := snapshot.Models[0].PricingSource, "override"; got != want {
+		t.Fatalf("pricing source = %q, want %q", got, want)
+	}
+}
