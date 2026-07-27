@@ -24,6 +24,25 @@
         </div>
       </div>
 
+      <div class="grid gap-3 md:grid-cols-4">
+        <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+          <div class="text-xs text-gray-500 dark:text-gray-400">模型总数</div>
+          <div class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{{ models.length }}</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+          <div class="text-xs text-gray-500 dark:text-gray-400">已启用</div>
+          <div class="mt-1 text-2xl font-semibold text-emerald-600 dark:text-emerald-300">{{ activeModelCount }}</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+          <div class="text-xs text-gray-500 dark:text-gray-400">已配置价格覆盖</div>
+          <div class="mt-1 text-2xl font-semibold text-primary-600 dark:text-primary-300">{{ pricedModelCount }}</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+          <div class="text-xs text-gray-500 dark:text-gray-400">当前筛选结果</div>
+          <div class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{{ filteredModels.length }}</div>
+        </div>
+      </div>
+
       <div class="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
         <section class="card p-5">
           <div class="mb-4 flex items-center justify-between gap-3">
@@ -78,6 +97,12 @@
                 <Icon name="search" size="sm" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input v-model.trim="search" type="text" class="input h-9 w-56 pl-9" placeholder="搜索模型名称" />
               </div>
+              <button type="button" class="btn btn-secondary btn-sm" :disabled="saving || filteredModels.length === 0" @click="applyOfficialPricingToCurrent(true)">
+                缺价填官方价
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" :disabled="saving || filteredModels.length === 0" @click="applyOfficialPricingToCurrent(false)">
+                覆盖为官方价
+              </button>
               <button type="button" class="btn btn-primary btn-sm" @click="openModelDialog()">
                 <Icon name="plus" size="sm" class="mr-1" />
                 新增模型
@@ -108,6 +133,8 @@
                 <option value="remove_tags">移除标签</option>
                 <option value="set_endpoints">替换端点</option>
                 <option value="clear_pricing">清空价格覆盖</option>
+                <option value="apply_missing_official_pricing">缺价填官方价</option>
+                <option value="apply_official_pricing">覆盖为官方价</option>
               </select>
               <select v-if="batchAction === 'set_vendor'" v-model="batchVendorId" class="input h-9 w-40">
                 <option :value="null">不指定</option>
@@ -141,7 +168,7 @@
                   <th class="px-3 py-2">模型</th>
                   <th class="px-3 py-2">厂商</th>
                   <th class="px-3 py-2">端点</th>
-                  <th class="px-3 py-2">价格覆盖</th>
+                  <th class="px-3 py-2">定价</th>
                   <th class="px-3 py-2">状态</th>
                   <th class="px-3 py-2 text-right">操作</th>
                 </tr>
@@ -176,8 +203,8 @@
                     </div>
                   </td>
                   <td class="px-3 py-3 text-sm text-gray-600 dark:text-gray-300">
-                    <span v-if="hasPricingOverride(model.pricing_override)">已配置</span>
-                    <span v-else class="text-gray-400">跟随渠道</span>
+                    <span v-if="hasPricingOverride(model.pricing_override)" class="inline-flex rounded bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">价格覆盖</span>
+                    <span v-else class="inline-flex rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500 dark:bg-dark-700 dark:text-gray-300">自动来源</span>
                   </td>
                   <td class="px-3 py-3">
                     <span :class="statusClass(model.status)">{{ statusLabel(model.status) }}</span>
@@ -449,6 +476,9 @@ const allFilteredSelected = computed(() => {
   return filteredModels.value.every((model) => selected.has(model.id))
 })
 
+const activeModelCount = computed(() => models.value.filter((model) => model.status === 'active').length)
+const pricedModelCount = computed(() => models.value.filter((model) => hasPricingOverride(model.pricing_override)).length)
+
 async function loadAll() {
   loading.value = true
   try {
@@ -603,6 +633,26 @@ async function runBatchAction() {
   }
 }
 
+async function applyOfficialPricingToCurrent(missingOnly: boolean) {
+  const ids = filteredModels.value.map((model) => model.id)
+  if (ids.length === 0) return
+  const action: ModelPlazaBatchAction = missingOnly ? 'apply_missing_official_pricing' : 'apply_official_pricing'
+  const label = missingOnly ? '为当前筛选结果中缺价模型填入官方价' : '将当前筛选结果覆盖为官方价'
+  if (!window.confirm(`确认${label}吗？共 ${ids.length} 个模型，未匹配官方预设的模型会自动跳过。`)) return
+
+  saving.value = true
+  try {
+    const result = await modelPlazaAPI.batchModels({ ids, action })
+    appStore.showSuccess(`官方定价处理完成，更新 ${result.updated} 个模型`)
+    clearSelection()
+    await loadAll()
+  } catch (error) {
+    appStore.showError(errorMessage(error, '应用官方定价失败'))
+  } finally {
+    saving.value = false
+  }
+}
+
 async function syncModels() {
   syncing.value = true
   try {
@@ -709,6 +759,8 @@ function batchActionLabel(action: ModelPlazaBatchAction): string {
     remove_tags: '移除标签',
     set_endpoints: '替换端点',
     clear_pricing: '清空价格覆盖',
+    apply_official_pricing: '覆盖为官方价',
+    apply_missing_official_pricing: '缺价填官方价',
   }
   return labels[action]
 }

@@ -42,7 +42,7 @@
         <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_180px_180px]">
           <div class="relative">
             <Icon name="search" size="md" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input v-model="query" class="input h-11 pl-10" placeholder="搜索模型、厂商、标签、分组、端点" />
+            <input v-model="query" class="input h-11 pl-10" placeholder="搜索模型、厂商、标签、端点" />
           </div>
           <select v-model="vendorFilter" class="input h-11">
             <option value="">全部厂商</option>
@@ -62,8 +62,7 @@
           </button>
         </div>
 
-        <div class="mt-4 grid gap-4 xl:grid-cols-4">
-          <FilterBlock title="分组" :items="groupOptions" :active="groupFilter" @select="groupFilter = $event" />
+        <div class="mt-4 grid gap-4 xl:grid-cols-3">
           <FilterBlock title="厂商" :items="vendorChipOptions" :active="vendorFilter" @select="vendorFilter = $event" />
           <FilterBlock title="标签" :items="tagOptions" :active="tagFilter" @select="tagFilter = $event" />
           <FilterBlock title="计费" :items="billingOptions" :active="billingFilter" @select="billingFilter = $event" />
@@ -88,7 +87,7 @@
         <article
           v-for="model in filteredModels"
           :key="model.model_name"
-          class="model-card group relative flex min-h-[320px] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition dark:border-dark-700 dark:bg-dark-900"
+          class="model-card group relative flex min-h-[250px] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition dark:border-dark-700 dark:bg-dark-900"
         >
           <div class="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-500 via-primary-500 to-emerald-500 opacity-0 transition group-hover:opacity-100" />
           <div class="flex items-start justify-between gap-3">
@@ -99,6 +98,9 @@
                   {{ modelInitial(model) }}
                 </div>
                 <h2 class="truncate text-base font-semibold text-slate-950 dark:text-white">{{ model.display_name || model.model_name }}</h2>
+                <button type="button" class="copy-button" title="复制模型名称" @click="copyModelName(model.model_name)">
+                  <Icon name="copy" size="sm" />
+                </button>
               </div>
               <p class="mt-1 truncate font-mono text-xs text-slate-500 dark:text-slate-400">{{ model.model_name }}</p>
             </div>
@@ -107,8 +109,8 @@
             </span>
           </div>
 
-          <p class="mt-3 line-clamp-2 min-h-[2.5rem] text-sm leading-5 text-slate-600 dark:text-slate-300">
-            {{ model.description || '暂无模型说明，管理员可在模型广场管理中补充展示文案。' }}
+          <p v-if="model.description" class="mt-3 line-clamp-2 text-sm leading-5 text-slate-600 dark:text-slate-300">
+            {{ model.description }}
           </p>
 
           <div class="mt-4 grid grid-cols-2 gap-2">
@@ -129,23 +131,8 @@
             <span v-if="model.supported_endpoints.length === 0" class="text-xs text-slate-400">未指定端点</span>
           </div>
 
-          <div class="mt-auto pt-4">
-            <div class="flex items-center justify-between gap-3">
-              <div class="min-w-0 truncate text-xs text-slate-500 dark:text-slate-400">
-                分组：{{ model.groups.map((g) => g.name).join('、') || '-' }}
-              </div>
-              <button type="button" class="details-button" @click="toggleDetails(model.model_name)">
-                {{ expandedModel === model.model_name ? '收起' : 'Details' }}
-              </button>
-            </div>
-            <div v-if="expandedModel === model.model_name" class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-dark-700 dark:bg-dark-800 dark:text-slate-300">
-              <div class="grid gap-2 sm:grid-cols-2">
-                <div>计费类型：{{ billingLabel(model.pricing?.billing_mode || '') }}</div>
-                <div>价格来源：{{ pricingSourceLabel(model.pricing_source) || '-' }}</div>
-                <div>图片输入：{{ price(model.pricing?.image_input_price, '/image') }}</div>
-                <div>按次请求：{{ price(model.pricing?.per_request_price, '/request') }}</div>
-              </div>
-            </div>
+          <div class="mt-auto pt-4 text-xs text-slate-500 dark:text-slate-400">
+            计费：{{ billingLabel(model.pricing?.billing_mode || '') }}
           </div>
         </article>
       </section>
@@ -230,11 +217,9 @@ const endpoints = ref<string[]>([])
 const query = ref('')
 const vendorFilter = ref('')
 const endpointFilter = ref('')
-const groupFilter = ref('')
 const tagFilter = ref('')
 const billingFilter = ref('')
 const loading = ref(false)
-const expandedModel = ref('')
 const snapshotVersion = ref('')
 
 const dashboardPath = computed(() => (authStore.isAdmin ? '/admin/dashboard' : '/dashboard'))
@@ -245,7 +230,6 @@ const filteredModels = computed(() => {
   return models.value.filter((model) => {
     if (vendorFilter.value && String(model.vendor_id || '') !== vendorFilter.value) return false
     if (endpointFilter.value && !model.supported_endpoints.includes(endpointFilter.value)) return false
-    if (groupFilter.value && !model.groups.some((group) => group.name === groupFilter.value)) return false
     if (tagFilter.value && !model.tags.includes(tagFilter.value)) return false
     if (billingFilter.value && (model.pricing?.billing_mode || '') !== billingFilter.value) return false
     if (!q) return true
@@ -257,7 +241,6 @@ const filteredModels = computed(() => {
       platformLabel(model.platform),
       pricingSourceLabel(model.pricing_source),
       ...model.tags,
-      ...model.groups.map((g) => g.name),
       ...model.supported_endpoints,
     ].join(' ').toLowerCase()
     return haystack.includes(q)
@@ -265,7 +248,7 @@ const filteredModels = computed(() => {
 })
 
 const hasActiveFilter = computed(() =>
-  Boolean(query.value || vendorFilter.value || endpointFilter.value || groupFilter.value || tagFilter.value || billingFilter.value),
+  Boolean(query.value || vendorFilter.value || endpointFilter.value || tagFilter.value || billingFilter.value),
 )
 
 const vendorOptions = computed(() =>
@@ -282,7 +265,6 @@ const vendorChipOptions = computed<FilterItem[]>(() =>
 )
 
 const endpointOptions = computed(() => countItems(models.value.flatMap((model) => model.supported_endpoints)))
-const groupOptions = computed(() => countItems(models.value.flatMap((model) => model.groups.map((group) => group.name))))
 const tagOptions = computed(() => countItems(models.value.flatMap((model) => model.tags)))
 const billingOptions = computed(() =>
   countItems(models.value.map((model) => model.pricing?.billing_mode || '').filter(Boolean)).map((item) => ({
@@ -308,13 +290,8 @@ function resetFilters() {
   query.value = ''
   vendorFilter.value = ''
   endpointFilter.value = ''
-  groupFilter.value = ''
   tagFilter.value = ''
   billingFilter.value = ''
-}
-
-function toggleDetails(modelName: string) {
-  expandedModel.value = expandedModel.value === modelName ? '' : modelName
 }
 
 function countItems(values: string[]): FilterItem[] {
@@ -327,6 +304,15 @@ function countItems(values: string[]): FilterItem[] {
   return Array.from(counter.entries())
     .map(([value, count]) => ({ label: value, value, count }))
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+}
+
+async function copyModelName(modelName: string) {
+  try {
+    await navigator.clipboard.writeText(modelName)
+    appStore.showSuccess('模型名称已复制')
+  } catch {
+    appStore.showError('复制失败')
+  }
 }
 
 function vendorName(id?: number | null): string {
@@ -369,6 +355,7 @@ function pricingSourceLabel(source: string): string {
     account: '账号同步',
     channel: '渠道价格',
     override: '管理员覆盖',
+    official_preset: '官方预设',
   }
   return labels[source] || ''
 }
@@ -479,7 +466,7 @@ onMounted(load)
   border: 1px solid rgb(226 232 240);
   border-radius: 8px;
   background: rgb(248 250 252);
-  padding: 10px;
+  padding: 8px;
   transition: all 160ms ease;
 }
 
@@ -506,12 +493,12 @@ onMounted(load)
 }
 
 .price-value {
-  margin-top: 4px;
+  margin-top: 3px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 650;
   color: rgb(15 23 42);
 }
 
@@ -559,25 +546,29 @@ onMounted(load)
   color: rgb(203 213 225);
 }
 
-.details-button {
-  flex: 0 0 auto;
+.copy-button {
+  display: inline-flex;
+  height: 26px;
+  width: 26px;
+  flex: 0 0 26px;
+  align-items: center;
+  justify-content: center;
   border-radius: 8px;
   border: 1px solid rgb(226 232 240);
-  padding: 5px 10px;
-  font-size: 12px;
-  font-weight: 600;
-  color: rgb(15 23 42);
+  color: rgb(100 116 139);
+  opacity: 0.72;
   transition: all 160ms ease;
 }
 
-.details-button:hover {
+.copy-button:hover {
   border-color: rgb(14 165 233);
   background: rgb(240 249 255);
   color: rgb(3 105 161);
+  opacity: 1;
 }
 
-.dark .details-button {
+.dark .copy-button {
   border-color: rgb(55 65 81);
-  color: rgb(226 232 240);
+  color: rgb(203 213 225);
 }
 </style>

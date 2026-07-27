@@ -84,16 +84,18 @@ type ModelPlazaModel struct {
 type ModelPlazaBatchAction string
 
 const (
-	ModelPlazaBatchEnable       ModelPlazaBatchAction = "enable"
-	ModelPlazaBatchDisable      ModelPlazaBatchAction = "disable"
-	ModelPlazaBatchDelete       ModelPlazaBatchAction = "delete"
-	ModelPlazaBatchSetVendor    ModelPlazaBatchAction = "set_vendor"
-	ModelPlazaBatchClearVendor  ModelPlazaBatchAction = "clear_vendor"
-	ModelPlazaBatchSetTags      ModelPlazaBatchAction = "set_tags"
-	ModelPlazaBatchAddTags      ModelPlazaBatchAction = "add_tags"
-	ModelPlazaBatchRemoveTags   ModelPlazaBatchAction = "remove_tags"
-	ModelPlazaBatchSetEndpoints ModelPlazaBatchAction = "set_endpoints"
-	ModelPlazaBatchClearPricing ModelPlazaBatchAction = "clear_pricing"
+	ModelPlazaBatchEnable                      ModelPlazaBatchAction = "enable"
+	ModelPlazaBatchDisable                     ModelPlazaBatchAction = "disable"
+	ModelPlazaBatchDelete                      ModelPlazaBatchAction = "delete"
+	ModelPlazaBatchSetVendor                   ModelPlazaBatchAction = "set_vendor"
+	ModelPlazaBatchClearVendor                 ModelPlazaBatchAction = "clear_vendor"
+	ModelPlazaBatchSetTags                     ModelPlazaBatchAction = "set_tags"
+	ModelPlazaBatchAddTags                     ModelPlazaBatchAction = "add_tags"
+	ModelPlazaBatchRemoveTags                  ModelPlazaBatchAction = "remove_tags"
+	ModelPlazaBatchSetEndpoints                ModelPlazaBatchAction = "set_endpoints"
+	ModelPlazaBatchClearPricing                ModelPlazaBatchAction = "clear_pricing"
+	ModelPlazaBatchApplyOfficialPricing        ModelPlazaBatchAction = "apply_official_pricing"
+	ModelPlazaBatchApplyMissingOfficialPricing ModelPlazaBatchAction = "apply_missing_official_pricing"
 )
 
 type ModelPlazaBatchUpdate struct {
@@ -240,7 +242,8 @@ func (s *ModelPlazaService) BatchUpdateModels(ctx context.Context, req ModelPlaz
 	switch req.Action {
 	case ModelPlazaBatchEnable, ModelPlazaBatchDisable, ModelPlazaBatchDelete, ModelPlazaBatchSetVendor,
 		ModelPlazaBatchClearVendor, ModelPlazaBatchSetTags, ModelPlazaBatchAddTags, ModelPlazaBatchRemoveTags,
-		ModelPlazaBatchSetEndpoints, ModelPlazaBatchClearPricing:
+		ModelPlazaBatchSetEndpoints, ModelPlazaBatchClearPricing, ModelPlazaBatchApplyOfficialPricing,
+		ModelPlazaBatchApplyMissingOfficialPricing:
 	default:
 		return 0, fmt.Errorf("invalid batch action")
 	}
@@ -291,6 +294,21 @@ func (s *ModelPlazaService) BatchUpdateModels(ctx context.Context, req ModelPlaz
 			model.Endpoints = endpoints
 		case ModelPlazaBatchClearPricing:
 			model.PricingOverride = ModelPlazaPricingOverride{}
+		case ModelPlazaBatchApplyOfficialPricing:
+			preset, ok := officialModelPlazaPricing(model.ModelName, "")
+			if !ok {
+				continue
+			}
+			model.PricingOverride = preset
+		case ModelPlazaBatchApplyMissingOfficialPricing:
+			if model.PricingOverride.IsConfigured() {
+				continue
+			}
+			preset, ok := officialModelPlazaPricing(model.ModelName, "")
+			if !ok {
+				continue
+			}
+			model.PricingOverride = preset
 		}
 		if err := s.UpdateModel(ctx, model); err != nil {
 			return changed, err
@@ -421,6 +439,12 @@ func (s *ModelPlazaService) Snapshot(ctx context.Context) (*ModelPlazaSnapshot, 
 	rows := make([]ModelPlazaModelView, 0, len(entries))
 	endpoints := make([]string, 0)
 	for _, entry := range entries {
+		if entry.Pricing == nil {
+			if preset, ok := officialModelPlazaPricing(entry.ModelName, entry.Platform); ok {
+				entry.Pricing = pricingViewFromChannel(pricingFromOverride(preset))
+				entry.PricingSource = "official_preset"
+			}
+		}
 		sort.SliceStable(entry.Groups, func(i, j int) bool { return entry.Groups[i].Name < entry.Groups[j].Name })
 		sort.Strings(entry.SupportedEndpoints)
 		endpoints = mergeStrings(endpoints, entry.SupportedEndpoints)

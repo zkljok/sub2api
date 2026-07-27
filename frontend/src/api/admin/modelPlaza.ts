@@ -37,6 +37,8 @@ export type ModelPlazaBatchAction =
   | 'remove_tags'
   | 'set_endpoints'
   | 'clear_pricing'
+  | 'apply_official_pricing'
+  | 'apply_missing_official_pricing'
 
 export interface ModelPlazaBatchRequest {
   ids: number[]
