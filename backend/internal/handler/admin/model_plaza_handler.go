@@ -40,6 +40,14 @@ type modelPlazaModelRequest struct {
 	AutoSynced      bool                              `json:"auto_synced"`
 }
 
+type modelPlazaBatchRequest struct {
+	IDs       []int64                       `json:"ids" binding:"required"`
+	Action    service.ModelPlazaBatchAction `json:"action" binding:"required"`
+	VendorID  *int64                        `json:"vendor_id"`
+	Tags      []string                      `json:"tags"`
+	Endpoints []string                      `json:"endpoints"`
+}
+
 func (h *ModelPlazaHandler) ListVendors(c *gin.Context) {
 	items, err := h.service.ListVendors(c.Request.Context(), true)
 	if err != nil {
@@ -161,6 +169,30 @@ func (h *ModelPlazaHandler) DeleteModel(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "Model deleted"})
+}
+
+func (h *ModelPlazaHandler) BatchModels(c *gin.Context) {
+	var req modelPlazaBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	changed, err := h.service.BatchUpdateModels(c.Request.Context(), service.ModelPlazaBatchUpdate{
+		IDs:       req.IDs,
+		Action:    req.Action,
+		VendorID:  req.VendorID,
+		Tags:      req.Tags,
+		Endpoints: req.Endpoints,
+	})
+	if err != nil {
+		if err == sql.ErrNoRows {
+			response.NotFound(c, "Model not found")
+			return
+		}
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"updated": changed})
 }
 
 func (h *ModelPlazaHandler) Sync(c *gin.Context) {

@@ -15,7 +15,7 @@
           </button>
           <button type="button" class="btn btn-secondary" :disabled="syncing" @click="syncModels">
             <Icon name="download" size="sm" class="mr-1.5" :class="{ 'animate-pulse': syncing }" />
-            从渠道同步模型
+            从账号/渠道同步模型
           </button>
           <RouterLink to="/models" class="btn btn-secondary">
             <Icon name="eye" size="sm" class="mr-1.5" />
@@ -70,7 +70,7 @@
             <div>
               <h2 class="text-base font-semibold text-gray-900 dark:text-white">模型配置</h2>
               <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                同步只会补充缺失模型，已有的展示和价格覆盖不会被覆盖。
+                优先从账号管理的模型映射同步，缺失时再从渠道补充；已有展示和价格覆盖不会被覆盖。
               </p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
@@ -85,10 +85,59 @@
             </div>
           </div>
 
+          <div class="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-600 dark:bg-dark-800/50">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-sm font-medium text-gray-700 dark:text-gray-200">
+                已选择 {{ selectedIds.length }} / {{ filteredModels.length }}
+              </span>
+              <button type="button" class="btn btn-secondary btn-sm" :disabled="filteredModels.length === 0" @click="toggleAllFiltered">
+                {{ allFilteredSelected ? '取消本页选择' : '选择当前结果' }}
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" :disabled="selectedIds.length === 0" @click="clearSelection">
+                清空选择
+              </button>
+              <div class="mx-1 hidden h-6 w-px bg-gray-200 dark:bg-dark-600 sm:block" />
+              <select v-model="batchAction" class="input h-9 w-36">
+                <option value="enable">批量启用</option>
+                <option value="disable">批量禁用</option>
+                <option value="delete">批量删除</option>
+                <option value="set_vendor">设置厂商</option>
+                <option value="clear_vendor">清空厂商</option>
+                <option value="set_tags">替换标签</option>
+                <option value="add_tags">追加标签</option>
+                <option value="remove_tags">移除标签</option>
+                <option value="set_endpoints">替换端点</option>
+                <option value="clear_pricing">清空价格覆盖</option>
+              </select>
+              <select v-if="batchAction === 'set_vendor'" v-model="batchVendorId" class="input h-9 w-40">
+                <option :value="null">不指定</option>
+                <option v-for="vendor in vendors" :key="vendor.id" :value="vendor.id">{{ vendor.name }}</option>
+              </select>
+              <input
+                v-if="['set_tags', 'add_tags', 'remove_tags'].includes(batchAction)"
+                v-model.trim="batchTagsText"
+                class="input h-9 w-56"
+                placeholder="标签，逗号分隔"
+              />
+              <input
+                v-if="batchAction === 'set_endpoints'"
+                v-model.trim="batchEndpointsText"
+                class="input h-9 w-64"
+                placeholder="端点，逗号分隔"
+              />
+              <button type="button" class="btn btn-primary btn-sm" :disabled="saving || selectedIds.length === 0" @click="runBatchAction">
+                执行批量操作
+              </button>
+            </div>
+          </div>
+
           <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200 dark:divide-dark-600">
               <thead>
                 <tr class="text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  <th class="w-10 px-3 py-2">
+                    <input type="checkbox" class="h-4 w-4 rounded border-gray-300" :checked="allFilteredSelected" @change="toggleAllFiltered" />
+                  </th>
                   <th class="px-3 py-2">模型</th>
                   <th class="px-3 py-2">厂商</th>
                   <th class="px-3 py-2">端点</th>
@@ -99,12 +148,15 @@
               </thead>
               <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
                 <tr v-if="loading">
-                  <td colspan="6" class="px-3 py-10 text-center text-sm text-gray-500">加载中...</td>
+                  <td colspan="7" class="px-3 py-10 text-center text-sm text-gray-500">加载中...</td>
                 </tr>
                 <tr v-else-if="filteredModels.length === 0">
-                  <td colspan="6" class="px-3 py-10 text-center text-sm text-gray-500">暂无模型</td>
+                  <td colspan="7" class="px-3 py-10 text-center text-sm text-gray-500">暂无模型</td>
                 </tr>
                 <tr v-for="model in filteredModels" v-else :key="model.id" class="align-top">
+                  <td class="px-3 py-3">
+                    <input v-model="selectedIds" type="checkbox" class="h-4 w-4 rounded border-gray-300" :value="model.id" />
+                  </td>
                   <td class="px-3 py-3">
                     <div class="font-medium text-gray-900 dark:text-white">{{ model.display_name || model.model_name }}</div>
                     <div class="mt-0.5 font-mono text-xs text-gray-500">{{ ruleLabel(model.name_rule) }}：{{ model.model_name }}</div>
@@ -302,6 +354,7 @@ import Icon from '@/components/icons/Icon.vue'
 import { useAppStore } from '@/stores'
 import { modelPlazaAPI } from '@/api/admin'
 import type {
+  ModelPlazaBatchAction,
   ModelPlazaModel,
   ModelPlazaModelRequest,
   ModelPlazaPricing,
@@ -318,6 +371,11 @@ const loading = ref(false)
 const saving = ref(false)
 const syncing = ref(false)
 const search = ref('')
+const selectedIds = ref<number[]>([])
+const batchAction = ref<ModelPlazaBatchAction>('enable')
+const batchVendorId = ref<number | null>(null)
+const batchTagsText = ref('')
+const batchEndpointsText = ref('')
 
 const vendorDialogOpen = ref(false)
 const modelDialogOpen = ref(false)
@@ -385,17 +443,39 @@ const filteredModels = computed(() => {
   )
 })
 
+const allFilteredSelected = computed(() => {
+  if (filteredModels.value.length === 0) return false
+  const selected = new Set(selectedIds.value)
+  return filteredModels.value.every((model) => selected.has(model.id))
+})
+
 async function loadAll() {
   loading.value = true
   try {
     const [vendorRows, modelRows] = await Promise.all([modelPlazaAPI.listVendors(), modelPlazaAPI.listModels()])
     vendors.value = vendorRows
     models.value = modelRows
+    selectedIds.value = selectedIds.value.filter((id) => modelRows.some((model) => model.id === id))
   } catch (error) {
     appStore.showError(errorMessage(error, '加载模型广场配置失败'))
   } finally {
     loading.value = false
   }
+}
+
+function toggleAllFiltered() {
+  const filteredIds = filteredModels.value.map((model) => model.id)
+  if (filteredIds.length === 0) return
+  if (allFilteredSelected.value) {
+    const filtered = new Set(filteredIds)
+    selectedIds.value = selectedIds.value.filter((id) => !filtered.has(id))
+    return
+  }
+  selectedIds.value = Array.from(new Set([...selectedIds.value, ...filteredIds]))
+}
+
+function clearSelection() {
+  selectedIds.value = []
 }
 
 function openVendorDialog(vendor?: ModelPlazaVendor) {
@@ -498,6 +578,31 @@ async function deleteModel(model: ModelPlazaModel) {
   }
 }
 
+async function runBatchAction() {
+  if (selectedIds.value.length === 0) return
+  const actionLabel = batchActionLabel(batchAction.value)
+  if (!window.confirm(`确认对 ${selectedIds.value.length} 个模型执行「${actionLabel}」吗？`)) return
+
+  saving.value = true
+  try {
+    const payload = {
+      ids: selectedIds.value,
+      action: batchAction.value,
+      vendor_id: batchAction.value === 'set_vendor' ? batchVendorId.value : undefined,
+      tags: ['set_tags', 'add_tags', 'remove_tags'].includes(batchAction.value) ? splitList(batchTagsText.value) : undefined,
+      endpoints: batchAction.value === 'set_endpoints' ? splitList(batchEndpointsText.value) : undefined,
+    }
+    const result = await modelPlazaAPI.batchModels(payload)
+    appStore.showSuccess(`批量操作完成，处理 ${result.updated} 个模型`)
+    clearSelection()
+    await loadAll()
+  } catch (error) {
+    appStore.showError(errorMessage(error, '批量操作失败'))
+  } finally {
+    saving.value = false
+  }
+}
+
 async function syncModels() {
   syncing.value = true
   try {
@@ -590,6 +695,22 @@ function ruleLabel(rule: string): string {
     contains: '包含匹配',
   }
   return labels[rule] || rule
+}
+
+function batchActionLabel(action: ModelPlazaBatchAction): string {
+  const labels: Record<ModelPlazaBatchAction, string> = {
+    enable: '批量启用',
+    disable: '批量禁用',
+    delete: '批量删除',
+    set_vendor: '设置厂商',
+    clear_vendor: '清空厂商',
+    set_tags: '替换标签',
+    add_tags: '追加标签',
+    remove_tags: '移除标签',
+    set_endpoints: '替换端点',
+    clear_pricing: '清空价格覆盖',
+  }
+  return labels[action]
 }
 
 function errorMessage(error: unknown, fallback: string): string {

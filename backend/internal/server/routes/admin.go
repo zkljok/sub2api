@@ -131,6 +131,7 @@ func registerModelPlazaRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		plaza.DELETE("/vendors/:id", h.Admin.ModelPlaza.DeleteVendor)
 		plaza.GET("/models", h.Admin.ModelPlaza.ListModels)
 		plaza.POST("/models", h.Admin.ModelPlaza.CreateModel)
+		plaza.POST("/batch/models", h.Admin.ModelPlaza.BatchModels)
 		plaza.PUT("/models/:id", h.Admin.ModelPlaza.UpdateModel)
 		plaza.DELETE("/models/:id", h.Admin.ModelPlaza.DeleteModel)
 		plaza.POST("/sync", h.Admin.ModelPlaza.Sync)

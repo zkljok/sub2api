@@ -26,6 +26,26 @@ export interface ModelPlazaModelRequest {
   auto_synced?: boolean
 }
 
+export type ModelPlazaBatchAction =
+  | 'enable'
+  | 'disable'
+  | 'delete'
+  | 'set_vendor'
+  | 'clear_vendor'
+  | 'set_tags'
+  | 'add_tags'
+  | 'remove_tags'
+  | 'set_endpoints'
+  | 'clear_pricing'
+
+export interface ModelPlazaBatchRequest {
+  ids: number[]
+  action: ModelPlazaBatchAction
+  vendor_id?: number | null
+  tags?: string[]
+  endpoints?: string[]
+}
+
 export async function listVendors(): Promise<ModelPlazaVendor[]> {
   const { data } = await apiClient.get<ModelPlazaVendor[]>('/admin/model-plaza/vendors')
   return data
@@ -64,6 +84,11 @@ export async function removeModel(id: number): Promise<void> {
   await apiClient.delete(`/admin/model-plaza/models/${id}`)
 }
 
+export async function batchModels(req: ModelPlazaBatchRequest): Promise<{ updated: number }> {
+  const { data } = await apiClient.post<{ updated: number }>('/admin/model-plaza/batch/models', req)
+  return data
+}
+
 export async function syncFromChannels(): Promise<{ inserted: number }> {
   const { data } = await apiClient.post<{ inserted: number }>('/admin/model-plaza/sync')
   return data
@@ -78,5 +103,6 @@ export default {
   createModel,
   updateModel,
   removeModel,
+  batchModels,
   syncFromChannels,
 }

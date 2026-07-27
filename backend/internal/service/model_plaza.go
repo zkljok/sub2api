@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"sort"
@@ -78,6 +79,29 @@ type ModelPlazaModel struct {
 	AutoSynced      bool                      `json:"auto_synced"`
 	CreatedAt       time.Time                 `json:"created_at"`
 	UpdatedAt       time.Time                 `json:"updated_at"`
+}
+
+type ModelPlazaBatchAction string
+
+const (
+	ModelPlazaBatchEnable       ModelPlazaBatchAction = "enable"
+	ModelPlazaBatchDisable      ModelPlazaBatchAction = "disable"
+	ModelPlazaBatchDelete       ModelPlazaBatchAction = "delete"
+	ModelPlazaBatchSetVendor    ModelPlazaBatchAction = "set_vendor"
+	ModelPlazaBatchClearVendor  ModelPlazaBatchAction = "clear_vendor"
+	ModelPlazaBatchSetTags      ModelPlazaBatchAction = "set_tags"
+	ModelPlazaBatchAddTags      ModelPlazaBatchAction = "add_tags"
+	ModelPlazaBatchRemoveTags   ModelPlazaBatchAction = "remove_tags"
+	ModelPlazaBatchSetEndpoints ModelPlazaBatchAction = "set_endpoints"
+	ModelPlazaBatchClearPricing ModelPlazaBatchAction = "clear_pricing"
+)
+
+type ModelPlazaBatchUpdate struct {
+	IDs       []int64               `json:"ids"`
+	Action    ModelPlazaBatchAction `json:"action"`
+	VendorID  *int64                `json:"vendor_id,omitempty"`
+	Tags      []string              `json:"tags,omitempty"`
+	Endpoints []string              `json:"endpoints,omitempty"`
 }
 
 type ModelPlazaRepository interface {
@@ -206,6 +230,74 @@ func (s *ModelPlazaService) UpdateModel(ctx context.Context, model *ModelPlazaMo
 
 func (s *ModelPlazaService) DeleteModel(ctx context.Context, id int64) error {
 	return s.repo.DeleteModel(ctx, id)
+}
+
+func (s *ModelPlazaService) BatchUpdateModels(ctx context.Context, req ModelPlazaBatchUpdate) (int, error) {
+	ids := normalizeModelPlazaIDs(req.IDs)
+	if len(ids) == 0 {
+		return 0, fmt.Errorf("model ids are required")
+	}
+	switch req.Action {
+	case ModelPlazaBatchEnable, ModelPlazaBatchDisable, ModelPlazaBatchDelete, ModelPlazaBatchSetVendor,
+		ModelPlazaBatchClearVendor, ModelPlazaBatchSetTags, ModelPlazaBatchAddTags, ModelPlazaBatchRemoveTags,
+		ModelPlazaBatchSetEndpoints, ModelPlazaBatchClearPricing:
+	default:
+		return 0, fmt.Errorf("invalid batch action")
+	}
+	if req.Action == ModelPlazaBatchDelete {
+		changed := 0
+		for _, id := range ids {
+			if err := s.repo.DeleteModel(ctx, id); err != nil {
+				return changed, err
+			}
+			changed++
+		}
+		return changed, nil
+	}
+
+	rows, err := s.repo.ListModels(ctx, true)
+	if err != nil {
+		return 0, err
+	}
+	byID := make(map[int64]*ModelPlazaModel, len(rows))
+	for i := range rows {
+		byID[rows[i].ID] = &rows[i]
+	}
+
+	changed := 0
+	tags := normalizeStringList(req.Tags)
+	endpoints := normalizeStringList(req.Endpoints)
+	for _, id := range ids {
+		model, ok := byID[id]
+		if !ok {
+			return changed, sql.ErrNoRows
+		}
+		switch req.Action {
+		case ModelPlazaBatchEnable:
+			model.Status = ModelPlazaStatusActive
+		case ModelPlazaBatchDisable:
+			model.Status = ModelPlazaStatusDisabled
+		case ModelPlazaBatchSetVendor:
+			model.VendorID = req.VendorID
+		case ModelPlazaBatchClearVendor:
+			model.VendorID = nil
+		case ModelPlazaBatchSetTags:
+			model.Tags = tags
+		case ModelPlazaBatchAddTags:
+			model.Tags = mergeStrings(model.Tags, tags)
+		case ModelPlazaBatchRemoveTags:
+			model.Tags = removeStrings(model.Tags, tags)
+		case ModelPlazaBatchSetEndpoints:
+			model.Endpoints = endpoints
+		case ModelPlazaBatchClearPricing:
+			model.PricingOverride = ModelPlazaPricingOverride{}
+		}
+		if err := s.UpdateModel(ctx, model); err != nil {
+			return changed, err
+		}
+		changed++
+	}
+	return changed, nil
 }
 
 func (s *ModelPlazaService) SyncFromChannels(ctx context.Context) (int, error) {
@@ -612,6 +704,41 @@ func mergeStrings(base, more []string) []string {
 }
 
 func normalizeStringList(values []string) []string { return mergeStrings(nil, values) }
+
+func normalizeModelPlazaIDs(values []int64) []int64 {
+	seen := make(map[int64]struct{}, len(values))
+	result := make([]int64, 0, len(values))
+	for _, value := range values {
+		if value <= 0 {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func removeStrings(base, remove []string) []string {
+	if len(base) == 0 || len(remove) == 0 {
+		return normalizeStringList(base)
+	}
+	blocked := make(map[string]struct{}, len(remove))
+	for _, value := range remove {
+		blocked[strings.ToLower(strings.TrimSpace(value))] = struct{}{}
+	}
+	result := make([]string, 0, len(base))
+	for _, value := range normalizeStringList(base) {
+		if _, ok := blocked[strings.ToLower(value)]; ok {
+			continue
+		}
+		result = append(result, value)
+	}
+	return result
+}
+
 func firstNonEmptyModelPlazaValue(values ...string) string {
 	for _, v := range values {
 		if strings.TrimSpace(v) != "" {
