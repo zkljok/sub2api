@@ -491,15 +491,12 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/status',
+    redirect: '/models'
+  },
+  {
     path: '/monitor',
-    name: 'ChannelStatus',
-    component: () => import('@/views/user/ChannelStatusView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: false,
-      title: 'Channel Status',
-      titleKey: 'nav.channelStatus'
-    }
+    redirect: '/models'
   },
   {
     path: '/admin/subscriptions',

@@ -10,7 +10,6 @@
           <router-link class="nav-link" to="/home">主页</router-link>
           <router-link class="nav-link" :to="authStore.isAuthenticated ? dashboardPath : '/login'">控制台</router-link>
           <span class="text-zinc-950">模型广场</span>
-          <router-link class="nav-link" to="/status">服务状态</router-link>
         </nav>
         <router-link class="login-pill" :to="authStore.isAuthenticated ? dashboardPath : '/login'">
           {{ authStore.isAuthenticated ? userInitial : '登录' }}
