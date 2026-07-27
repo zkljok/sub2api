@@ -148,11 +148,12 @@ type ModelPlazaSnapshot struct {
 
 type ModelPlazaService struct {
 	repo           ModelPlazaRepository
+	accountRepo    AccountRepository
 	channelService *ChannelService
 }
 
-func NewModelPlazaService(repo ModelPlazaRepository, channelService *ChannelService) *ModelPlazaService {
-	return &ModelPlazaService{repo: repo, channelService: channelService}
+func NewModelPlazaService(repo ModelPlazaRepository, accountRepo AccountRepository, channelService *ChannelService) *ModelPlazaService {
+	return &ModelPlazaService{repo: repo, accountRepo: accountRepo, channelService: channelService}
 }
 
 func (s *ModelPlazaService) ListVendors(ctx context.Context, includeDisabled bool) ([]ModelPlazaVendor, error) {
@@ -208,6 +209,14 @@ func (s *ModelPlazaService) DeleteModel(ctx context.Context, id int64) error {
 }
 
 func (s *ModelPlazaService) SyncFromChannels(ctx context.Context) (int, error) {
+	accountModels, err := s.modelNamesFromAccounts(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if len(accountModels) > 0 {
+		return s.repo.InsertMissingModels(ctx, accountModels)
+	}
+
 	channels, err := s.channelService.ListAvailable(ctx)
 	if err != nil {
 		return 0, err
@@ -252,6 +261,10 @@ func (s *ModelPlazaService) Snapshot(ctx context.Context) (*ModelPlazaSnapshot, 
 	}
 
 	entries := make(map[string]*ModelPlazaModelView)
+	if err := s.addAccountEntries(ctx, entries); err != nil {
+		return nil, err
+	}
+
 	for _, channel := range channels {
 		if channel.Status != StatusActive {
 			continue
@@ -333,6 +346,121 @@ func (s *ModelPlazaService) Snapshot(ctx context.Context) (*ModelPlazaSnapshot, 
 		Models: rows, Vendors: vendors, SupportedEndpoints: endpoints,
 		PricingVersion: modelPlazaVersion(rows, vendors), GeneratedAt: now,
 	}, nil
+}
+
+func (s *ModelPlazaService) addAccountEntries(ctx context.Context, entries map[string]*ModelPlazaModelView) error {
+	if s.accountRepo == nil {
+		return nil
+	}
+	accounts, err := s.accountRepo.ListModelAvailabilityCandidates(ctx, nil, modelPlazaAccountPlatforms(), true)
+	if err != nil {
+		return err
+	}
+	for i := range accounts {
+		account := &accounts[i]
+		publicGroups, hasOnlyExclusiveGroups := modelPlazaPublicGroupsFromAccount(account)
+		if hasOnlyExclusiveGroups {
+			continue
+		}
+		for _, modelName := range modelPlazaModelNamesFromAccount(account) {
+			key := strings.ToLower(strings.TrimSpace(modelName))
+			if key == "" {
+				continue
+			}
+			entry, ok := entries[key]
+			if !ok {
+				entry = &ModelPlazaModelView{
+					ModelName:          modelName,
+					DisplayName:        modelName,
+					Platform:           account.Platform,
+					Tags:               []string{},
+					Groups:             []ModelPlazaGroup{},
+					SupportedEndpoints: defaultEndpointsForPlatform(account.Platform),
+					PricingSource:      "account",
+				}
+				entries[key] = entry
+			}
+			entry.Groups = mergeModelPlazaGroups(entry.Groups, publicGroups)
+			entry.SupportedEndpoints = mergeStrings(entry.SupportedEndpoints, defaultEndpointsForPlatform(account.Platform))
+			if entry.Platform == "" {
+				entry.Platform = account.Platform
+			}
+		}
+	}
+	return nil
+}
+
+func (s *ModelPlazaService) modelNamesFromAccounts(ctx context.Context) ([]string, error) {
+	if s.accountRepo == nil {
+		return nil, nil
+	}
+	accounts, err := s.accountRepo.ListModelAvailabilityCandidates(ctx, nil, modelPlazaAccountPlatforms(), true)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{})
+	result := make([]string, 0)
+	for i := range accounts {
+		account := &accounts[i]
+		_, hasOnlyExclusiveGroups := modelPlazaPublicGroupsFromAccount(account)
+		if hasOnlyExclusiveGroups {
+			continue
+		}
+		for _, name := range modelPlazaModelNamesFromAccount(account) {
+			key := strings.ToLower(strings.TrimSpace(name))
+			if key == "" {
+				continue
+			}
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			result = append(result, name)
+		}
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
+func modelPlazaAccountPlatforms() []string {
+	platforms := schedulerSnapshotPlatforms()
+	return []string{platforms[0], platforms[1], platforms[2], platforms[3], platforms[4]}
+}
+
+func modelPlazaModelNamesFromAccount(account *Account) []string {
+	if account == nil {
+		return nil
+	}
+	mapping := account.GetModelMapping()
+	names := make([]string, 0, len(mapping))
+	for requested := range mapping {
+		requested = strings.TrimSpace(requested)
+		if requested == "" || strings.Contains(requested, "*") {
+			continue
+		}
+		names = append(names, requested)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func modelPlazaPublicGroupsFromAccount(account *Account) ([]ModelPlazaGroup, bool) {
+	if account == nil || len(account.Groups) == 0 {
+		return nil, false
+	}
+	groups := make([]ModelPlazaGroup, 0, len(account.Groups))
+	for _, group := range account.Groups {
+		if group == nil || group.Status != StatusActive || group.IsExclusive {
+			continue
+		}
+		groups = append(groups, ModelPlazaGroup{
+			ID:             group.ID,
+			Name:           group.Name,
+			Platform:       group.Platform,
+			RateMultiplier: group.RateMultiplier,
+		})
+	}
+	return groups, len(groups) == 0
 }
 
 func normalizeModelPlazaModel(model *ModelPlazaModel) error {

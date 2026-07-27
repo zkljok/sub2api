@@ -135,7 +135,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	channelRepository := repository.NewChannelRepository(db)
 	channelService := service.NewChannelService(channelRepository, groupRepository, apiKeyAuthCacheInvalidator, pricingService)
 	modelPlazaRepository := repository.NewModelPlazaRepository(db)
-	modelPlazaService := service.NewModelPlazaService(modelPlazaRepository, channelService)
+	modelPlazaService := service.NewModelPlazaService(modelPlazaRepository, accountRepository, channelService)
 	modelPricingResolver := service.NewModelPricingResolver(channelService, billingService)
 	compositeModelRouteRepository := repository.NewCompositeModelRouteRepository(client)
 	compositeRouteResolver := service.NewCompositeRouteResolver(compositeModelRouteRepository)
