@@ -535,6 +535,7 @@ onMounted(load)
 }
 
 .mini-filter-button span {
+  font-size: 15px;
   line-height: 1;
 }
 
@@ -596,14 +597,14 @@ onMounted(load)
 
 :deep(.vendor-chip-icon) {
   display: inline-flex;
-  height: 22px;
-  width: 22px;
+  height: 28px;
+  width: 28px;
   align-items: center;
   justify-content: center;
   border-radius: 999px;
   background: #fff;
   color: var(--vendor-color, #52525b);
-  font-size: 12px;
+  font-size: 15px;
   font-style: normal;
   font-weight: 900;
   box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
@@ -703,15 +704,15 @@ onMounted(load)
 
 .vendor-mark {
   display: inline-flex;
-  height: 54px;
-  width: 54px;
-  flex: 0 0 54px;
+  height: 64px;
+  width: 64px;
+  flex: 0 0 64px;
   align-items: center;
   justify-content: center;
   border-radius: 999px;
   background: var(--vendor-bg, #fff3ec);
   color: var(--vendor-color, #df714b);
-  font-size: 28px;
+  font-size: 34px;
   font-weight: 900;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9), 0 14px 24px color-mix(in srgb, var(--vendor-color, #df714b) 12%, transparent);
 }
