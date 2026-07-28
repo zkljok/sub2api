@@ -2,14 +2,20 @@
 package response
 
 import (
+	"bytes"
+	"compress/gzip"
+	"encoding/json"
 	"log"
 	"math"
 	"net/http"
+	"strings"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 	"github.com/gin-gonic/gin"
 )
+
+const gzipMinResponseBytes = 1024
 
 // Response 标准API响应格式
 type Response struct {
@@ -36,6 +42,91 @@ func Success(c *gin.Context, data any) {
 		Message: "success",
 		Data:    data,
 	})
+}
+
+// SuccessMaybeGzip returns the standard success envelope and gzips large JSON
+// responses when the client supports it. It is intentionally opt-in so streaming
+// and gateway responses keep their current behavior.
+func SuccessMaybeGzip(c *gin.Context, data any) {
+	payload, err := json.Marshal(Response{
+		Code:    0,
+		Message: "success",
+		Data:    data,
+	})
+	if err != nil {
+		Error(c, http.StatusInternalServerError, "failed to serialize response")
+		return
+	}
+	DataMaybeGzip(c, http.StatusOK, "application/json; charset=utf-8", payload)
+}
+
+// DataMaybeGzip writes a response body, applying gzip only for large, ordinary
+// responses. Range requests are left untouched because compressed byte ranges are
+// not equivalent to original body ranges.
+func DataMaybeGzip(c *gin.Context, status int, contentType string, payload []byte) {
+	if !shouldGzip(c, payload) {
+		c.Data(status, contentType, payload)
+		return
+	}
+
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	if _, err := zw.Write(payload); err != nil {
+		_ = zw.Close()
+		c.Data(status, contentType, payload)
+		return
+	}
+	if err := zw.Close(); err != nil {
+		c.Data(status, contentType, payload)
+		return
+	}
+
+	c.Header("Content-Encoding", "gzip")
+	c.Header("Vary", appendVary(c.Writer.Header().Get("Vary"), "Accept-Encoding"))
+	c.Data(status, contentType, buf.Bytes())
+}
+
+func shouldGzip(c *gin.Context, payload []byte) bool {
+	if c == nil || c.Request == nil || len(payload) < gzipMinResponseBytes {
+		return false
+	}
+	if strings.TrimSpace(c.GetHeader("Range")) != "" {
+		return false
+	}
+	return acceptsGzip(c.GetHeader("Accept-Encoding"))
+}
+
+func acceptsGzip(header string) bool {
+	for _, part := range strings.Split(header, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		segments := strings.Split(part, ";")
+		if !strings.EqualFold(strings.TrimSpace(segments[0]), "gzip") {
+			continue
+		}
+		for _, segment := range segments[1:] {
+			kv := strings.SplitN(strings.TrimSpace(segment), "=", 2)
+			if len(kv) == 2 && strings.EqualFold(kv[0], "q") && strings.TrimSpace(kv[1]) == "0" {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func appendVary(existing, value string) string {
+	for _, part := range strings.Split(existing, ",") {
+		if strings.EqualFold(strings.TrimSpace(part), value) {
+			return existing
+		}
+	}
+	if strings.TrimSpace(existing) == "" {
+		return value
+	}
+	return existing + ", " + value
 }
 
 // Created 返回创建成功响应

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,60 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
+
+const publicSiteLogoPath = "/api/v1/settings/site-logo"
+
+// PublicSiteLogo returns a data-URI logo as a cacheable same-origin asset.
+// Legacy URL-based logos are intentionally left untouched by GetPublicSettings.
+func (s *SettingService) PublicSiteLogo(ctx context.Context) (content []byte, contentType, version string, ok bool, err error) {
+	settings, err := s.settingRepo.GetMultiple(ctx, []string{SettingKeySiteLogo})
+	if err != nil {
+		return nil, "", "", false, fmt.Errorf("get site logo: %w", err)
+	}
+
+	content, contentType, ok = decodeDataImage(settings[SettingKeySiteLogo])
+	if !ok {
+		return nil, "", "", false, nil
+	}
+	sum := sha256.Sum256(content)
+	return content, contentType, hex.EncodeToString(sum[:])[:16], true, nil
+}
+
+func publicSiteLogoURL(raw string) string {
+	content, _, ok := decodeDataImage(raw)
+	if !ok {
+		return raw
+	}
+	sum := sha256.Sum256(content)
+	return publicSiteLogoPath + "?v=" + hex.EncodeToString(sum[:])[:16]
+}
+
+func decodeDataImage(raw string) ([]byte, string, bool) {
+	raw = strings.TrimSpace(raw)
+	if !strings.HasPrefix(strings.ToLower(raw), "data:") {
+		return nil, "", false
+	}
+
+	comma := strings.IndexByte(raw, ',')
+	if comma <= len("data:") {
+		return nil, "", false
+	}
+
+	meta := raw[len("data:"):comma]
+	if !strings.HasSuffix(strings.ToLower(meta), ";base64") {
+		return nil, "", false
+	}
+	contentType := strings.TrimSpace(meta[:len(meta)-len(";base64")])
+	if !strings.HasPrefix(strings.ToLower(contentType), "image/") {
+		return nil, "", false
+	}
+
+	content, err := base64.StdEncoding.DecodeString(raw[comma+1:])
+	if err != nil || len(content) == 0 {
+		return nil, "", false
+	}
+	return content, contentType, true
+}
 
 func normalizeLoginAgreementMode(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
@@ -299,7 +354,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		TurnstileEnabled:                 settings[SettingKeyTurnstileEnabled] == "true",
 		TurnstileSiteKey:                 settings[SettingKeyTurnstileSiteKey],
 		SiteName:                         s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
-		SiteLogo:                         settings[SettingKeySiteLogo],
+		SiteLogo:                         publicSiteLogoURL(settings[SettingKeySiteLogo]),
 		SiteSubtitle:                     s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
 		APIBaseURL:                       settings[SettingKeyAPIBaseURL],
 		ContactInfo:                      settings[SettingKeyContactInfo],

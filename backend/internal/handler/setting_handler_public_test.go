@@ -4,6 +4,7 @@ package handler
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,27 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSettingHandler_GetPublicSiteLogo_ServesVersionedLegacyDataImage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	logo := []byte{0x89, 0x50, 0x4e, 0x47}
+	h := NewSettingHandler(service.NewSettingService(&settingHandlerPublicRepoStub{
+		values: map[string]string{
+			service.SettingKeySiteLogo: "data:image/png;base64," + base64.StdEncoding.EncodeToString(logo),
+		},
+	}, &config.Config{}), "test-version")
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/settings/site-logo", nil)
+
+	h.GetPublicSiteLogo(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, "image/png", recorder.Header().Get("Content-Type"))
+	require.Equal(t, "public, max-age=31536000, immutable", recorder.Header().Get("Cache-Control"))
+	require.Equal(t, logo, recorder.Body.Bytes())
+}
 
 type settingHandlerPublicRepoStub struct {
 	values map[string]string
