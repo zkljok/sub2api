@@ -5932,6 +5932,37 @@
                 </div>
                 <Toggle v-model="form.hide_ccs_import_button" />
               </div>
+
+              <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
+                <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <h3 class="text-sm font-medium text-gray-900 dark:text-white">
+                      {{ t("admin.settings.donation.title") }}
+                    </h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.donation.description") }}
+                    </p>
+                  </div>
+                  <Toggle v-model="form.donation_enabled" />
+                </div>
+                <div class="mt-4">
+                  <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t("admin.settings.donation.url") }}
+                  </label>
+                  <input
+                    v-model="form.donation_url"
+                    type="url"
+                    class="input font-mono text-sm"
+                    :placeholder="t('admin.settings.donation.urlPlaceholder')"
+                  />
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.donation.urlHint") }}
+                  </p>
+                  <p class="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                    {{ t("admin.settings.donation.iframeWarning") }}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -8726,6 +8757,8 @@ const form = reactive<SettingsForm>({
   home_content: "",
   backend_mode_enabled: false,
   hide_ccs_import_button: false,
+  donation_enabled: true,
+  donation_url: "https://www.kufaka.com/shop/YJLink",
   payment_enabled: false,
   risk_control_enabled: false,
   cyber_session_block_enabled: false,
@@ -10245,6 +10278,8 @@ async function saveSettings() {
       home_content: form.home_content,
       backend_mode_enabled: form.backend_mode_enabled,
       hide_ccs_import_button: form.hide_ccs_import_button,
+      donation_enabled: form.donation_enabled,
+      donation_url: form.donation_url,
       table_default_page_size: form.table_default_page_size,
       table_page_size_options: form.table_page_size_options,
       custom_menu_items: form.custom_menu_items,

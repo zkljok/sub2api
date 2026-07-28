@@ -158,6 +158,7 @@ export default {
     modelPlaza: 'Models',
     modelPlazaManagement: 'Model Plaza',
     redeem: 'Redeem',
+    donation: 'Donate',
     affiliate: 'Affiliate Rebates',
     affiliateManagement: 'Affiliate Rebates',
     affiliateInviteRecords: 'Invite Records',
@@ -199,6 +200,14 @@ export default {
     contentModeration: 'Content Moderation',
     promptAudit: 'Prompt Audit',
     auditLogs: 'Audit Logs',
+  },
+
+  donation: {
+    title: 'Donate',
+    description: 'Thank you for your support. You can complete the donation on this page.',
+    openInNewTab: 'Open in new tab',
+    notConfiguredTitle: 'Donation page is not enabled',
+    notConfiguredDesc: 'The administrator has not configured a donation page URL.'
   },
 
   // Auth

@@ -574,6 +574,16 @@ export default {
         moveUp: 'Move Up',
         moveDown: 'Move Down',
       },
+      donation: {
+        title: 'Donation Page',
+        description: 'Show a Donate entry in the sidebar and open the configured link inside an iframe page.',
+        enabled: 'Show donation entry',
+        url: 'Donation page URL',
+        urlPlaceholder: 'https://www.kufaka.com/shop/YJLink',
+        urlHint: 'Must be a full http(s) URL. After saving, the sidebar entry and embed page use the new URL.',
+        iframeWarning:
+          '⚠️ iframe note: if the target site blocks embedding, the frame may be blank; users can still open it in a new tab.'
+      },
       payment: {
         title: 'Payment Settings',
         description: 'Configure payment system options',

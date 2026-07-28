@@ -144,6 +144,8 @@ type UpdateSettingsRequest struct {
 	HideCcsImportButton         bool                  `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled *bool                 `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL     *string               `json:"purchase_subscription_url"`
+	DonationEnabled             *bool                 `json:"donation_enabled"`
+	DonationURL                 *string               `json:"donation_url"`
 	TableDefaultPageSize        int                   `json:"table_default_page_size"`
 	TablePageSizeOptions        []int                 `json:"table_page_size_options"`
 	CustomMenuItems             *[]dto.CustomMenuItem `json:"custom_menu_items"`
@@ -1042,6 +1044,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if req.PurchaseSubscriptionURL != nil {
 		purchaseURL = strings.TrimSpace(*req.PurchaseSubscriptionURL)
 	}
+	donationEnabled := previousSettings.DonationEnabled
+	if req.DonationEnabled != nil {
+		donationEnabled = *req.DonationEnabled
+	}
+	donationURL := previousSettings.DonationURL
+	if req.DonationURL != nil {
+		donationURL = strings.TrimSpace(*req.DonationURL)
+	}
 
 	// - 启用时要求 URL 合法且非空
 	// - 禁用时允许为空；若提供了 URL 也做基本校验，避免误配置
@@ -1057,6 +1067,22 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	} else if purchaseURL != "" {
 		if err := config.ValidateAbsoluteHTTPURL(purchaseURL); err != nil {
 			response.BadRequest(c, "Purchase Subscription URL must be an absolute http(s) URL")
+			return
+		}
+	}
+
+	if donationEnabled {
+		if donationURL == "" {
+			response.BadRequest(c, "Donation URL is required when enabled")
+			return
+		}
+		if err := config.ValidateAbsoluteHTTPURL(donationURL); err != nil {
+			response.BadRequest(c, "Donation URL must be an absolute http(s) URL")
+			return
+		}
+	} else if donationURL != "" {
+		if err := config.ValidateAbsoluteHTTPURL(donationURL); err != nil {
+			response.BadRequest(c, "Donation URL must be an absolute http(s) URL")
 			return
 		}
 	}
@@ -1415,6 +1441,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		HideCcsImportButton:                    req.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:            purchaseEnabled,
 		PurchaseSubscriptionURL:                purchaseURL,
+		DonationEnabled:                        donationEnabled,
+		DonationURL:                            donationURL,
 		TableDefaultPageSize:                   req.TableDefaultPageSize,
 		TablePageSizeOptions:                   req.TablePageSizeOptions,
 		CustomMenuItems:                        customMenuJSON,
@@ -1944,6 +1972,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		HideCcsImportButton:                                    updatedSettings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:                            updatedSettings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:                                updatedSettings.PurchaseSubscriptionURL,
+		DonationEnabled:                                        updatedSettings.DonationEnabled,
+		DonationURL:                                            updatedSettings.DonationURL,
 		TableDefaultPageSize:                                   updatedSettings.TableDefaultPageSize,
 		TablePageSizeOptions:                                   updatedSettings.TablePageSizeOptions,
 		CustomMenuItems:                                        dto.ParseCustomMenuItems(updatedSettings.CustomMenuItems),

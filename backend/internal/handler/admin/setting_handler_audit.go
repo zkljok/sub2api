@@ -392,6 +392,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.PurchaseSubscriptionURL != after.PurchaseSubscriptionURL {
 		changed = append(changed, "purchase_subscription_url")
 	}
+	if before.DonationEnabled != after.DonationEnabled {
+		changed = append(changed, "donation_enabled")
+	}
+	if before.DonationURL != after.DonationURL {
+		changed = append(changed, "donation_url")
+	}
 	if before.TableDefaultPageSize != after.TableDefaultPageSize {
 		changed = append(changed, "table_default_page_size")
 	}
