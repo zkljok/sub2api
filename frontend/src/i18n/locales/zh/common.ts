@@ -156,6 +156,7 @@ export default {
     batchImage: '批量生图',
     usage: '使用记录',
     redeem: '兑换',
+    donation: '打赏/捐赠',
     affiliate: '邀请返利',
     affiliateManagement: '邀请返利',
     affiliateInviteRecords: '邀请记录',
@@ -198,6 +199,14 @@ export default {
     contentModeration: '内容审核',
     promptAudit: '提示词审计',
     auditLogs: '操作日志',
+  },
+
+  donation: {
+    title: '打赏/捐赠',
+    description: '感谢你的支持，页面内可直接完成打赏或捐赠操作。',
+    openInNewTab: '新窗口打开',
+    notConfiguredTitle: '打赏页面未启用',
+    notConfiguredDesc: '管理员暂未配置打赏/捐赠页面地址。'
   },
 
   // Auth

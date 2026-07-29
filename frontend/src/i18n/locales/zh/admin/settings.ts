@@ -586,6 +586,16 @@ export default {
         moveUp: '上移',
         moveDown: '下移',
       },
+      donation: {
+        title: '打赏/捐赠页面',
+        description: '在侧边栏展示“打赏/捐赠”入口，并在页面内通过 iframe 打开指定链接。',
+        enabled: '显示打赏/捐赠入口',
+        url: '打赏/捐赠页面 URL',
+        urlPlaceholder: 'https://www.kufaka.com/shop/YJLink',
+        urlHint: '必须是完整的 http(s) 链接。保存后侧边栏入口和嵌入页面会同步使用新地址。',
+        iframeWarning:
+          '⚠️ iframe 提示：如果目标网站禁止被嵌入，页面可能空白；用户仍可点击“新窗口打开”。'
+      },
       payment: {
         title: '支付设置',
         description: '配置支付系统选项',

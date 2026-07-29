@@ -4,11 +4,41 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSettingService_GetPublicSettings_ExternalizesDataImageLogo(t *testing.T) {
+	logo := []byte{0x89, 0x50, 0x4e, 0x47}
+	svc := NewSettingService(&settingPublicRepoStub{
+		values: map[string]string{
+			SettingKeySiteLogo: "data:image/png;base64," + base64.StdEncoding.EncodeToString(logo),
+		},
+	}, &config.Config{})
+
+	settings, err := svc.GetPublicSettings(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, publicSiteLogoPath+"?v=0f4636c78f65d363", settings.SiteLogo)
+}
+
+func TestSettingService_PublicSiteLogo_DecodesLegacyDataImage(t *testing.T) {
+	logo := []byte{0x89, 0x50, 0x4e, 0x47}
+	svc := NewSettingService(&settingPublicRepoStub{
+		values: map[string]string{
+			SettingKeySiteLogo: "data:image/png;base64," + base64.StdEncoding.EncodeToString(logo),
+		},
+	}, &config.Config{})
+
+	content, contentType, version, ok, err := svc.PublicSiteLogo(context.Background())
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, logo, content)
+	require.Equal(t, "image/png", contentType)
+	require.Equal(t, "0f4636c78f65d363", version)
+}
 
 type settingPublicRepoStub struct {
 	values map[string]string

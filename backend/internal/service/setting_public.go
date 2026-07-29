@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,60 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
+
+const publicSiteLogoPath = "/api/v1/settings/site-logo"
+
+// PublicSiteLogo returns a data-URI logo as a cacheable same-origin asset.
+// Legacy URL-based logos are intentionally left untouched by GetPublicSettings.
+func (s *SettingService) PublicSiteLogo(ctx context.Context) (content []byte, contentType, version string, ok bool, err error) {
+	settings, err := s.settingRepo.GetMultiple(ctx, []string{SettingKeySiteLogo})
+	if err != nil {
+		return nil, "", "", false, fmt.Errorf("get site logo: %w", err)
+	}
+
+	content, contentType, ok = decodeDataImage(settings[SettingKeySiteLogo])
+	if !ok {
+		return nil, "", "", false, nil
+	}
+	sum := sha256.Sum256(content)
+	return content, contentType, hex.EncodeToString(sum[:])[:16], true, nil
+}
+
+func publicSiteLogoURL(raw string) string {
+	content, _, ok := decodeDataImage(raw)
+	if !ok {
+		return raw
+	}
+	sum := sha256.Sum256(content)
+	return publicSiteLogoPath + "?v=" + hex.EncodeToString(sum[:])[:16]
+}
+
+func decodeDataImage(raw string) ([]byte, string, bool) {
+	raw = strings.TrimSpace(raw)
+	if !strings.HasPrefix(strings.ToLower(raw), "data:") {
+		return nil, "", false
+	}
+
+	comma := strings.IndexByte(raw, ',')
+	if comma <= len("data:") {
+		return nil, "", false
+	}
+
+	meta := raw[len("data:"):comma]
+	if !strings.HasSuffix(strings.ToLower(meta), ";base64") {
+		return nil, "", false
+	}
+	contentType := strings.TrimSpace(meta[:len(meta)-len(";base64")])
+	if !strings.HasPrefix(strings.ToLower(contentType), "image/") {
+		return nil, "", false
+	}
+
+	content, err := base64.StdEncoding.DecodeString(raw[comma+1:])
+	if err != nil || len(content) == 0 {
+		return nil, "", false
+	}
+	return content, contentType, true
+}
 
 func normalizeLoginAgreementMode(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
@@ -182,6 +237,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyHideCcsImportButton,
 		SettingKeyPurchaseSubscriptionEnabled,
 		SettingKeyPurchaseSubscriptionURL,
+		SettingKeyDonationEnabled,
+		SettingKeyDonationURL,
 		SettingKeyTableDefaultPageSize,
 		SettingKeyTablePageSizeOptions,
 		SettingKeyCustomMenuItems,
@@ -301,7 +358,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		TurnstileEnabled:                 settings[SettingKeyTurnstileEnabled] == "true",
 		TurnstileSiteKey:                 settings[SettingKeyTurnstileSiteKey],
 		SiteName:                         s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
-		SiteLogo:                         settings[SettingKeySiteLogo],
+		SiteLogo:                         publicSiteLogoURL(settings[SettingKeySiteLogo]),
 		SiteSubtitle:                     s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
 		APIBaseURL:                       settings[SettingKeyAPIBaseURL],
 		ContactInfo:                      settings[SettingKeyContactInfo],
@@ -310,6 +367,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		HideCcsImportButton:              settings[SettingKeyHideCcsImportButton] == "true",
 		PurchaseSubscriptionEnabled:      settings[SettingKeyPurchaseSubscriptionEnabled] == "true",
 		PurchaseSubscriptionURL:          strings.TrimSpace(settings[SettingKeyPurchaseSubscriptionURL]),
+		DonationEnabled:                  settings[SettingKeyDonationEnabled] != "false",
+		DonationURL:                      s.getStringOrDefault(settings, SettingKeyDonationURL, "https://www.kufaka.com/shop/YJLink"),
 		TableDefaultPageSize:             tableDefaultPageSize,
 		TablePageSizeOptions:             tablePageSizeOptions,
 		CustomMenuItems:                  settings[SettingKeyCustomMenuItems],
@@ -498,6 +557,8 @@ type PublicSettingsInjectionPayload struct {
 	HideCcsImportButton              bool                     `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled      bool                     `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL          string                   `json:"purchase_subscription_url"`
+	DonationEnabled                  bool                     `json:"donation_enabled"`
+	DonationURL                      string                   `json:"donation_url"`
 	TableDefaultPageSize             int                      `json:"table_default_page_size"`
 	TablePageSizeOptions             []int                    `json:"table_page_size_options"`
 	CustomMenuItems                  json.RawMessage          `json:"custom_menu_items"`
@@ -570,6 +631,8 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		HideCcsImportButton:              settings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:      settings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:          settings.PurchaseSubscriptionURL,
+		DonationEnabled:                  settings.DonationEnabled,
+		DonationURL:                      settings.DonationURL,
 		TableDefaultPageSize:             settings.TableDefaultPageSize,
 		TablePageSizeOptions:             settings.TablePageSizeOptions,
 		CustomMenuItems:                  filterUserVisibleMenuItems(settings.CustomMenuItems),
@@ -654,7 +717,7 @@ func safeRawJSONArray(raw string) json.RawMessage {
 }
 
 // GetFrameSrcOrigins returns deduplicated http(s) origins from home_content URL,
-// purchase_subscription_url, and all custom_menu_items URLs. Used by the router layer for CSP frame-src injection.
+// purchase_subscription_url, donation_url, and all custom_menu_items URLs. Used by the router layer for CSP frame-src injection.
 func (s *SettingService) GetFrameSrcOrigins(ctx context.Context) ([]string, error) {
 	settings, err := s.GetPublicSettings(ctx)
 	if err != nil {
@@ -679,6 +742,10 @@ func (s *SettingService) GetFrameSrcOrigins(ctx context.Context) ([]string, erro
 	// purchase subscription URL
 	if settings.PurchaseSubscriptionEnabled {
 		addOrigin(settings.PurchaseSubscriptionURL)
+	}
+
+	if settings.DonationEnabled {
+		addOrigin(settings.DonationURL)
 	}
 
 	// all custom menu items (including admin-only, since CSP must allow all iframes)

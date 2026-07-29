@@ -43,7 +43,7 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, dto.PublicSettings{
+	response.SuccessMaybeGzip(c, dto.PublicSettings{
 		RegistrationEnabled:              settings.RegistrationEnabled,
 		EmailVerifyEnabled:               settings.EmailVerifyEnabled,
 		ForceEmailOnThirdPartySignup:     settings.ForceEmailOnThirdPartySignup,
@@ -70,6 +70,8 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		HideCcsImportButton:              settings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:      settings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:          settings.PurchaseSubscriptionURL,
+		DonationEnabled:                  settings.DonationEnabled,
+		DonationURL:                      settings.DonationURL,
 		TableDefaultPageSize:             settings.TableDefaultPageSize,
 		TablePageSizeOptions:             settings.TablePageSizeOptions,
 		CustomMenuItems:                  dto.ParseUserVisibleMenuItems(settings.CustomMenuItems),
@@ -108,6 +110,30 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 
 		AllowUserViewErrorRequests: settings.AllowUserViewErrorRequests,
 	})
+}
+
+// GetPublicSiteLogo serves legacy Base64 logos as a versioned same-origin image.
+// GET /api/v1/settings/site-logo?v=<content-hash>
+func (h *SettingHandler) GetPublicSiteLogo(c *gin.Context) {
+	content, contentType, version, ok, err := h.settingService.PublicSiteLogo(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if !ok {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	etag := `"` + version + `"`
+	if c.GetHeader("If-None-Match") == etag {
+		c.Status(http.StatusNotModified)
+		return
+	}
+
+	c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	c.Header("ETag", etag)
+	c.Data(http.StatusOK, contentType, content)
 }
 
 // UnsubscribeNotificationEmail handles optional notification email opt-outs.
